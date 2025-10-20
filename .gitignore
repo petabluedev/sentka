@@ -1,0 +1,9 @@
+# deps & builds
+node_modules/
+.next/
+out/
+dist/
+# env & misc
+.env*
+*.log
+.DS_Store
