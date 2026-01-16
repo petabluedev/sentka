@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import prisma from "@/lib/prisma";
 import { getSession, SESSION_COOKIE } from "@/lib/auth";
+import AdminClientMarker from "@/components/admin/AdminClientMarker";
 
 export const metadata = { title: "Admin • Sentka" };
 
@@ -54,6 +55,7 @@ export default async function AdminPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10 space-y-8">
+      <AdminClientMarker />
       <header className="space-y-2">
         <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
           Admin
