@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Load {
+  vehicle     String
+  createdAt   DateTime  @default(now())
+  enclosed    Boolean   @default(false)
+  operable    Boolean   @default(true)
+  priceCents  Int
+  id          String    @id @default(cuid())
+  dropoffCity String
+  pickupCity  String
+  vehicleType String
+  distance    Int?
+  pickupDate  DateTime?
+  postedById  String?
+  postedBy    User?     @relation(fields: [postedById], references: [id])
+  ePODApprovedAt DateTime?
+  ePODApprovedById String?
+  ePODApprovedBy   User?    @relation("LoadEPODApproval", fields: [ePODApprovedById], references: [id])
+  payments    Payment[]
+  bids        Bid[]
+}
+
+model User {
+  id         String     @id @default(cuid())
+  email      String     @unique
+  password   String
+  username   String     @unique
+  name       String?
+  role       UserRole   @default(SHIPPER)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  lastLoginAt DateTime?
+  profile    Profile?
+  connectAccountId String?
+  sessions   Session[]
+  passwordResets PasswordReset[]
+  loads      Load[]
+  ePODApprovals Load[]    @relation("LoadEPODApproval")
+  bids       Bid[]       @relation("DriverBids")
+}
+
+model Profile {
+  id           String    @id @default(cuid())
+  user         User      @relation(fields: [userId], references: [id])
+  userId       String    @unique
+  companyName  String?
+  phone        String?
+  city         String?
+  state        String?
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  token      String   @unique
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+  userAgent  String?
+}
+
+model PasswordReset {
+  id         String   @id @default(cuid())
+  token      String   @unique
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+}
+
+model Payment {
+  id               String    @id @default(cuid())
+  load             Load      @relation(fields: [loadId], references: [id])
+  loadId           String
+  payerId          String
+  payeeId          String?
+  payeeConnectId   String?
+  transferId       String?
+  amountCents      Int
+  currency         String    @default("usd")
+  paymentIntentId  String    @unique
+  status           PaymentStatus @default(PENDING)
+  captured         Boolean   @default(false)
+  releasedAt       DateTime?
+  refundedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  notes            String?
+}
+
+enum PaymentStatus {
+  PENDING
+  REQUIRES_ACTION
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  CANCELED
+}
+
+enum UserRole {
+  SHIPPER
+  DRIVER
+  ADMIN
+}
+
+model Bid {
+  id         String    @id @default(cuid())
+  load       Load      @relation(fields: [loadId], references: [id])
+  loadId     String
+  driver     User      @relation("DriverBids", fields: [driverId], references: [id])
+  driverId   String
+  amountCents Int
+  status     BidStatus @default(PENDING)
+  acceptedAt DateTime?
+  createdAt  DateTime @default(now())
+}
+
+enum BidStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELED
+}
