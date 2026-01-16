@@ -91,9 +91,15 @@ export default async function DriverDashboardPage() {
         eta: "Today",
         status,
         price: Math.round((l.priceCents ?? 0) / 100),
-        bids: l.bids,
-        createdAt: l.createdAt,
-        completedAt: l.ePODApprovedAt ?? l.payments?.find((p) => p.captured)?.releasedAt ?? null,
+        bids: l.bids?.map((b) => ({
+          ...b,
+          createdAt: b.createdAt.toISOString(),
+        })),
+        createdAt: l.createdAt.toISOString(),
+        completedAt:
+          l.ePODApprovedAt?.toISOString() ??
+          l.payments?.find((p) => p.captured)?.releasedAt?.toISOString() ??
+          null,
         bidAmount: acceptedBid ? acceptedBid.amountCents / 100 : null,
       };
     }) ?? [];

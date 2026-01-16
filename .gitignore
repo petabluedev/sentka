@@ -22,3 +22,4 @@ prisma/migrations/
 
 # Local installer
 stripe_1.34.0_linux_amd64.deb
+.vercel
