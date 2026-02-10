@@ -20,14 +20,18 @@ export default function NavAuth({ initialUser = null }: Props) {
   useEffect(() => {
     let active = true;
     fetch("/api/auth/me", { cache: "no-store", credentials: "include" })
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data) => {
+      .then(async (r) => {
         if (!active) return;
-        setUser(data?.user ?? null);
+        if (r.ok) {
+          const data = await r.json().catch(() => ({} as any));
+          if (active) setUser(data?.user ?? null);
+          return;
+        }
+        if (r.status === 401) {
+          setUser(null);
+        }
       })
-      .catch(() => {
-        if (active) setUser(null);
-      });
+      .catch(() => {});
     return () => {
       active = false;
     };

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { currentUser, clearAuthCookies } from "@/lib/auth";
+import { currentUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   try {
     const user = await currentUser(req);
-    if (!user) return clearAuthCookies(NextResponse.json({ user: null }, { status: 401 }));
+    if (!user) return NextResponse.json({ user: null }, { status: 401 });
     return NextResponse.json({
       user: {
         id: user.id,
@@ -17,6 +17,6 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error("GET /api/auth/me error", err);
-    return clearAuthCookies(NextResponse.json({ error: "Server error" }, { status: 500 }));
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
