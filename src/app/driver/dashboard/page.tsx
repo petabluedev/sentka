@@ -5,6 +5,8 @@ import type { Initial } from "@/app/driver/dashboard/DriverDashboardClient";
 import AuthStatus from "@/components/auth/AuthStatus";
 import { getSession, SESSION_COOKIE } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { getInstantFeeCents } from "@/lib/payouts";
+import { haversineKm } from "@/lib/matching";
 
 const DriverDashboardClient = dynamic(() => import("@/app/driver/dashboard/DriverDashboardClient"), {
   ssr: false,
@@ -16,6 +18,8 @@ type Load = {
   id: string;
   pickupCity: string;
   dropoffCity: string;
+  pickupLat?: number | null;
+  pickupLng?: number | null;
   priceCents: number;
   enclosed?: boolean;
   operable?: boolean;
@@ -27,6 +31,22 @@ type Load = {
   bids?: { id: string; driverId: string; status: string; amountCents: number; createdAt: string }[];
 };
 
+type EarningItem = {
+  id: string;
+  jobId: string;
+  amountCents: number;
+  status: "PENDING" | "APPROVED" | "PAID";
+  approvedAt?: string | null;
+  paidAt?: string | null;
+  lane: string;
+  payout?: {
+    method: "WEEKLY_ACH" | "INSTANT_DEBIT";
+    destinationMask?: string | null;
+    status?: "CREATED" | "PROCESSING" | "SUCCEEDED" | "FAILED";
+    railUsed?: "FEDNOW" | "RTP" | "INSTANT_DEBIT" | "ACH_SAME_DAY" | "ACH_STANDARD" | null;
+  } | null;
+};
+
 export default async function DriverDashboardPage() {
   const token = cookies().get(SESSION_COOKIE)?.value;
   const session = token ? await getSession(token) : null;
@@ -36,7 +56,7 @@ export default async function DriverDashboardPage() {
 
   const driverId = session?.user?.id ?? null;
 
-  const [availableLoadsRaw, myLoadsRaw] = await Promise.all([
+  const [availableLoadsRaw, myLoadsRaw, earningsRaw, driverLocation] = await Promise.all([
     prisma.load.findMany({
       where: {
         bids: { none: { status: { equals: "ACCEPTED" } } },
@@ -54,6 +74,8 @@ export default async function DriverDashboardPage() {
         id: true,
         pickupCity: true,
         dropoffCity: true,
+        pickupLat: true,
+        pickupLng: true,
         priceCents: true,
         vehicleType: true,
         distance: true,
@@ -77,6 +99,15 @@ export default async function DriverDashboardPage() {
           },
         })
       : [],
+    driverId
+      ? prisma.earning.findMany({
+          where: { driverId },
+          include: { job: { select: { pickupCity: true, dropoffCity: true } }, payout: true },
+          orderBy: { createdAt: "desc" },
+          take: 100,
+        })
+      : [],
+    driverId ? prisma.driverLocation.findUnique({ where: { driverId } }) : null,
   ]);
 
   const myLoadsMapped =
@@ -105,17 +136,61 @@ export default async function DriverDashboardPage() {
     }) ?? [];
 
   const availableLoads =
-    availableLoadsRaw.map((l) => ({
-      id: l.id,
-      lane: `${l.pickupCity} → ${l.dropoffCity}`,
-      body: l.vehicleType ?? "Vehicle",
-      miles: l.distance ?? 0,
-      pay: Math.round((l.priceCents ?? 0) / 100),
-      instant: true,
+    availableLoadsRaw
+      .map((l) => {
+        let miles = l.distance ?? 0;
+        if (driverLocation && l.pickupLat != null && l.pickupLng != null) {
+          const km = haversineKm(driverLocation.lat, driverLocation.lng, l.pickupLat, l.pickupLng);
+          miles = Math.max(1, Math.round(km * 0.621371));
+        }
+        return {
+          id: l.id,
+          lane: `${l.pickupCity} → ${l.dropoffCity}`,
+          body: l.vehicleType ?? "Vehicle",
+          miles,
+          pay: Math.round((l.priceCents ?? 0) / 100),
+          instant: true,
+        };
+      })
+      .sort((a, b) => a.miles - b.miles) ?? [];
+
+  const earnings: EarningItem[] =
+    earningsRaw?.map((e) => ({
+      id: e.id,
+      jobId: e.jobId,
+      amountCents: e.amountCents,
+      status: e.status as EarningItem["status"],
+      approvedAt: e.approvedAt?.toISOString() ?? null,
+      paidAt: e.paidAt?.toISOString() ?? null,
+      lane: `${e.job.pickupCity} → ${e.job.dropoffCity}`,
+      payout: e.payout
+        ? {
+            method: e.payout.method as "WEEKLY_ACH" | "INSTANT_DEBIT",
+            destinationMask: e.payout.destinationMask,
+            status: e.payout.status as "CREATED" | "PROCESSING" | "SUCCEEDED" | "FAILED",
+            railUsed: e.payout.railUsed as
+              | "FEDNOW"
+              | "RTP"
+              | "INSTANT_DEBIT"
+              | "ACH_SAME_DAY"
+              | "ACH_STANDARD"
+              | null,
+          }
+        : null,
     })) ?? [];
 
+  const earningsSummary = earnings.reduce(
+    (acc, e) => {
+      if (e.status === "PENDING") acc.pendingCents += e.amountCents;
+      if (e.status === "APPROVED") acc.approvedCents += e.amountCents;
+      if (e.status === "PAID") acc.paidCents += e.amountCents;
+      return acc;
+    },
+    { pendingCents: 0, approvedCents: 0, paidCents: 0 }
+  );
+
   const activeLoads = myLoadsMapped.filter((l) => l.status !== "DELIVERED").length;
-  const weekEarnings = myLoadsMapped.reduce((sum, l) => sum + (l.bidAmount ?? l.price ?? 0), 0);
+  const approvedEarnings = Math.round(earningsSummary.approvedCents / 100);
 
   const initial: Initial = {
     name: session?.user?.name || "Driver",
@@ -124,7 +199,7 @@ export default async function DriverDashboardPage() {
     kpis: {
       activeLoads,
       milesToday: activeLoads * 80 || 164,
-      weekEarnings, // USD
+      weekEarnings: approvedEarnings, // USD
       onTimePct: 98,
       rating: 4.9,
     },
@@ -137,6 +212,11 @@ export default async function DriverDashboardPage() {
           new Date(a.completedAt ?? a.createdAt ?? "").getTime()
       ),
     nearbyBids: availableLoads,
+    earnings: {
+      summary: earningsSummary,
+      items: earnings,
+      instantFeeCents: getInstantFeeCents(),
+    },
   };
 
   return (

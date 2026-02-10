@@ -1,8 +1,9 @@
 // src/app/(driver)/dashboard/DriverDashboardClient.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, ArrowDownRight, MapPin, Truck, Star, DollarSign, Timer } from "lucide-react";
+import React, { useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { MapPin, Truck, Star, DollarSign } from "lucide-react";
 
 // ---------- Types ----------
 type KPI = { activeLoads: number; milesToday: number; weekEarnings: number; onTimePct: number; rating: number };
@@ -19,7 +20,22 @@ type Load = {
   bidAmount?: number | null;
 };
 type NearbyBid = { id: string; lane: string; body: string; miles: number; pay: number };
-type Acceptable = { id: string; type: "load" | "bid"; payloadId: string };
+type EarningItem = {
+  id: string;
+  jobId: string;
+  amountCents: number;
+  status: "PENDING" | "APPROVED" | "PAID";
+  approvedAt?: string | null;
+  paidAt?: string | null;
+  lane: string;
+  payout?: {
+    method: "WEEKLY_ACH" | "INSTANT_DEBIT";
+    destinationMask?: string | null;
+    status?: "CREATED" | "PROCESSING" | "SUCCEEDED" | "FAILED";
+    railUsed?: "FEDNOW" | "RTP" | "INSTANT_DEBIT" | "ACH_SAME_DAY" | "ACH_STANDARD" | null;
+  } | null;
+};
+type EarningsSummary = { pendingCents: number; approvedCents: number; paidCents: number };
 
 export type Initial = {
   name: string;
@@ -29,33 +45,61 @@ export type Initial = {
   loadsToday: Load[];
   completedLoads: Load[];
   nearbyBids: NearbyBid[];
+  earnings: { summary: EarningsSummary; items: EarningItem[]; instantFeeCents: number };
 };
 
 export default function DriverDashboardClient({ initial }: { initial: Initial }) {
+  const router = useRouter();
   const loadsToday = initial.loadsToday ?? [];
   const completedLoads = initial.completedLoads ?? [];
   const nearby = initial.nearbyBids ?? [];
-
-  // live price “wiggle” for nearby bids
-  const [bids, setBids] = useState(nearby);
-  const [pulse, setPulse] = useState(0);
+  const bids = nearby;
+  const earnings = initial.earnings?.items ?? [];
+  const earningsSummary = initial.earnings?.summary ?? { pendingCents: 0, approvedCents: 0, paidCents: 0 };
+  const instantFeeCents = initial.earnings?.instantFeeCents ?? 125;
+  const [earningsTab, setEarningsTab] = useState<"PENDING" | "APPROVED" | "PAID">("APPROVED");
+  const [instantStatus, setInstantStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [instantError, setInstantError] = useState<string | null>(null);
   const [completedSortDesc, setCompletedSortDesc] = useState(true);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setPulse((n) => n + 1);
-      setBids((prev) =>
-        prev.map((b) => {
-          // tiny random movement
-          const d = Math.round((Math.random() - 0.5) * 10);
-          return { ...b, pay: Math.max(120, b.pay + d) };
-        })
-      );
-    }, 2200);
-    return () => clearInterval(id);
-  }, []);
+  const instantKeyRef = useRef<string | null>(null);
 
   const k = initial.kpis;
+  const filteredEarnings = useMemo(
+    () => earnings.filter((e) => e.status === earningsTab),
+    [earnings, earningsTab]
+  );
+  const canInstant = earningsSummary.approvedCents > 0;
+
+  async function handleInstantPayout() {
+    if (!canInstant || instantStatus === "loading") return;
+    setInstantStatus("loading");
+    setInstantError(null);
+    try {
+      if (!instantKeyRef.current) {
+        instantKeyRef.current =
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      }
+      const idempotencyKey = instantKeyRef.current;
+      const res = await fetch("/api/drivers/me/payouts/instant", {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        throw new Error(data?.error || "Instant payout failed");
+      }
+      setInstantStatus("done");
+      instantKeyRef.current = null;
+      setTimeout(() => setInstantStatus("idle"), 1200);
+      router.refresh();
+    } catch (err: any) {
+      setInstantError(err?.message || "Instant payout failed");
+      setInstantStatus("error");
+      setTimeout(() => setInstantStatus("idle"), 1500);
+    }
+  }
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-8" suppressHydrationWarning>
@@ -87,7 +131,7 @@ export default function DriverDashboardClient({ initial }: { initial: Initial })
         <KpiCard label="Active loads" value={k.activeLoads} />
         <KpiCard label="Miles today" value={`${k.milesToday} mi`} />
         <KpiCard
-          label="Earnings (week)"
+          label="Approved earnings"
           value={`$${k.weekEarnings.toLocaleString("en-US")}`}
           icon={<DollarSign className="h-4 w-4" />}
         />
@@ -140,19 +184,85 @@ export default function DriverDashboardClient({ initial }: { initial: Initial })
           </Card>
         </div>
 
-        {/* Right: Live nearby bids */}
-        <div className="lg:col-span-5">
-          <Card
-            title={
-              <div className="flex items-center justify-between">
-                <span>Live nearby bids</span>
-                <span className="text-xs text-gray-500 inline-flex items-center gap-1">
-                  <Timer className="h-3.5 w-3.5" />
-                  refresh {2 - (pulse % 2)}s
-                </span>
+        {/* Right: Earnings + Nearby bids */}
+        <div className="lg:col-span-5 space-y-6">
+          <Card title="Earnings">
+            <div className="flex flex-wrap items-center gap-2">
+              {(["PENDING", "APPROVED", "PAID"] as const).map((tab) => {
+                const active = earningsTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setEarningsTab(tab)}
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      active ? "bg-black text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    {tab.charAt(0) + tab.slice(1).toLowerCase()}
+                  </button>
+                );
+              })}
+              <span className="ml-auto text-[11px] text-slate-500">Weekly ACH: Monday 6:00am</span>
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <StatMini label="Pending" value={formatMoney(earningsSummary.pendingCents)} />
+              <StatMini label="Approved" value={formatMoney(earningsSummary.approvedCents)} />
+              <StatMini label="Paid" value={formatMoney(earningsSummary.paidCents)} />
+            </div>
+
+            {earningsTab === "APPROVED" ? (
+              <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 text-xs text-emerald-800">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    Instant payout fee: {formatMoney(instantFeeCents)} (only if instant completes under 5 minutes).
+                    ACH fallback is free.
+                  </div>
+                  {canInstant ? (
+                    <button
+                      onClick={handleInstantPayout}
+                      disabled={instantStatus === "loading"}
+                      className="rounded-lg bg-black px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-60"
+                    >
+                      {instantStatus === "loading" ? "Processing…" : "Cash out now"}
+                    </button>
+                  ) : (
+                    <span className="text-[11px] text-slate-500">No approved earnings yet</span>
+                  )}
+                </div>
+                {instantError ? <div className="mt-2 text-[11px] text-red-600">{instantError}</div> : null}
               </div>
-            }
-          >
+            ) : null}
+
+            <div className="mt-4 space-y-2">
+              {filteredEarnings.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs text-slate-500">
+                  No {earningsTab.toLowerCase()} earnings yet.
+                </div>
+              ) : (
+                filteredEarnings.map((e) => (
+                  <div
+                    key={e.id}
+                    className="flex items-center justify-between rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-semibold text-slate-800">{e.lane}</div>
+                      <div className="text-[11px] text-slate-500">
+                        {earningsTab === "PAID"
+                          ? formatDepositLabel(e.payout)
+                          : earningsTab === "APPROVED"
+                          ? "Approved for payout"
+                          : "Awaiting approval"}
+                      </div>
+                    </div>
+                    <div className="text-sm font-semibold text-slate-900">{formatMoney(e.amountCents)}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+
+          <Card title="Nearby bids">
             <div className="space-y-2">
               {bids.map((b) => (
                 <BidRow key={b.id} bid={b} />
@@ -188,6 +298,42 @@ function KpiCard({ label, value, icon }: { label: string; value: React.ReactNode
       </div>
     </div>
   );
+}
+
+function StatMini({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-sm font-semibold text-slate-900">{value}</div>
+    </div>
+  );
+}
+
+function formatMoney(cents: number) {
+  return `$${(cents / 100).toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatDepositLabel(
+  payout?: {
+    method: "WEEKLY_ACH" | "INSTANT_DEBIT";
+    destinationMask?: string | null;
+    status?: "CREATED" | "PROCESSING" | "SUCCEEDED" | "FAILED";
+    railUsed?: "FEDNOW" | "RTP" | "INSTANT_DEBIT" | "ACH_SAME_DAY" | "ACH_STANDARD" | null;
+  } | null
+) {
+  if (!payout) return "Deposited";
+  const mask = payout.destinationMask ? ` ••••${payout.destinationMask}` : "";
+  const isAch = payout.railUsed === "ACH_SAME_DAY" || payout.railUsed === "ACH_STANDARD";
+  if (payout.status !== "SUCCEEDED" || isAch) {
+    return `Scheduled to Bank${mask}`;
+  }
+  if (payout.railUsed === "INSTANT_DEBIT") {
+    return `Deposited to Debit${mask} (Instant)`;
+  }
+  return `Deposited to Bank${mask} (Instant)`;
 }
 
 function StatusPill({ status }: { status: Load["status"] }) {
@@ -259,15 +405,6 @@ function LoadRow(l: Load) {
 }
 
 function BidRow({ bid }: { bid: NearbyBid }) {
-  // Simple “direction” based on last digit
-  const up = bid.pay % 2 === 0;
-  const TrendIcon = up ? ArrowUpRight : ArrowDownRight;
-  const trendColor = up ? "text-emerald-600" : "text-rose-600";
-  const pill =
-    up
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : "bg-rose-50 text-rose-700 border-rose-200";
-
   return (
     <div className="flex items-center justify-between rounded-xl border px-3 py-2">
       <div className="min-w-0">
@@ -275,12 +412,8 @@ function BidRow({ bid }: { bid: NearbyBid }) {
         <div className="text-xs text-gray-500">{bid.body} · {bid.miles} mi</div>
       </div>
       <div className="flex items-center gap-3">
-        <span className={`inline-flex items-center gap-1 text-sm font-semibold ${trendColor}`}>
-          <TrendIcon className="h-4 w-4" />
+        <span className="inline-flex items-center gap-1 text-sm font-semibold text-slate-900">
           ${bid.pay}
-        </span>
-        <span className={`text-[10px] border px-2 py-0.5 rounded-full ${pill}`}>
-          {up ? "instant-book eligible" : "counter required"}
         </span>
         <AcceptButton bid={bid} />
       </div>

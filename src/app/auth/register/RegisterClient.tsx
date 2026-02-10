@@ -1,7 +1,7 @@
 // src/app/auth/register/RegisterClient.tsx
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function RegisterClient() {
@@ -14,7 +14,11 @@ export default function RegisterClient() {
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const suggestions = useMemo(() => makeSuggestions(name, email), [name, email]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+
+  useEffect(() => {
+    setSuggestions(makeSuggestions(name, email));
+  }, [name, email]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

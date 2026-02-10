@@ -17,16 +17,26 @@ model Load {
   id          String    @id @default(cuid())
   dropoffCity String
   pickupCity  String
+  pickupLat   Float?
+  pickupLng   Float?
+  dropoffLat  Float?
+  dropoffLng  Float?
   vehicleType String
   distance    Int?
   pickupDate  DateTime?
   postedById  String?
   postedBy    User?     @relation(fields: [postedById], references: [id])
+  assignedDriverId String?
+  assignedDriver   User?    @relation("AssignedDriver", fields: [assignedDriverId], references: [id])
+  assignmentStatus AssignmentStatus @default(UNASSIGNED)
+  assignmentVersion Int @default(0)
   ePODApprovedAt DateTime?
   ePODApprovedById String?
   ePODApprovedBy   User?    @relation("LoadEPODApproval", fields: [ePODApprovedById], references: [id])
   payments    Payment[]
   bids        Bid[]
+  earnings    Earning[]
+  jobOffers   JobOffer[]
 }
 
 model User {
@@ -44,8 +54,15 @@ model User {
   sessions   Session[]
   passwordResets PasswordReset[]
   loads      Load[]
+  assignedLoads Load[] @relation("AssignedDriver")
   ePODApprovals Load[]    @relation("LoadEPODApproval")
   bids       Bid[]       @relation("DriverBids")
+  earnings   Earning[]
+  payouts    Payout[]
+  payoutDestinations PayoutDestination[]
+  driverLocation DriverLocation?
+  driverStatus   DriverStatus?
+  jobOffers      JobOffer[]
 }
 
 model Profile {
@@ -125,9 +142,181 @@ model Bid {
   createdAt  DateTime @default(now())
 }
 
+model Earning {
+  id         String        @id @default(cuid())
+  jobId      String        @unique
+  job        Load          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  driverId   String
+  driver     User          @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  amountCents Int
+  status     EarningStatus @default(PENDING)
+  approvedAt DateTime?
+  paidAt     DateTime?
+  payoutId   String?
+  payout     Payout?       @relation(fields: [payoutId], references: [id])
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+}
+
+model Payout {
+  id              String       @id @default(cuid())
+  driverId        String
+  driver          User         @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  amountGrossCents Int
+  feeAmountCents  Int
+  amountNetCents  Int
+  method          PayoutMethod
+  railUsed        PayoutRail?
+  status          PayoutStatus @default(CREATED)
+  destinationMask String?
+  providerReferenceId String?
+  idempotencyKey  String?
+  createdAt       DateTime     @default(now())
+  initiatedAt     DateTime?
+  processedAt     DateTime?
+  earnings        Earning[]
+
+  @@unique([driverId, idempotencyKey])
+}
+
+model LedgerEntry {
+  id            String        @id @default(cuid())
+  refType       LedgerRefType
+  refId         String
+  debitAccount  String
+  creditAccount String
+  amountCents   Int
+  createdAt     DateTime      @default(now())
+
+  @@unique([refType, refId, debitAccount, creditAccount])
+}
+
+model PayoutDestination {
+  id             String               @id @default(cuid())
+  driverId       String
+  driver         User                 @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  type           PayoutDestinationType
+  tokenReference String
+  mask           String
+  isDefault      Boolean              @default(false)
+  createdAt      DateTime             @default(now())
+
+  @@unique([driverId, type, tokenReference])
+}
+
+model DriverLocation {
+  driverId     String   @id
+  driver       User     @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  lat          Float
+  lng          Float
+  accuracyM    Int?
+  headingDeg   Int?
+  speedMps     Float?
+  capturedAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+}
+
+model DriverStatus {
+  driverId     String           @id
+  driver       User             @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  availability DriverAvailability @default(OFFLINE)
+  vehicleType  VehicleType?
+  capacityTag  String[] @default([])
+  homeZone     String?
+  lastSeenAt   DateTime?        @db.Timestamptz(3)
+  updatedAt    DateTime         @updatedAt @db.Timestamptz(3)
+}
+
+model JobOffer {
+  id          String          @id @default(uuid())
+  jobId       String
+  job         Load            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  driverId    String
+  driver      User            @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  offerStatus JobOfferStatus
+  offeredAt   DateTime        @default(now()) @db.Timestamptz(3)
+  respondedAt DateTime?       @db.Timestamptz(3)
+  expiresAt   DateTime        @db.Timestamptz(3)
+  score       Float
+  distanceKm  Float
+  attempt     Int             @default(1)
+
+  @@unique([jobId, driverId, attempt])
+  @@index([jobId, offerStatus])
+  @@index([driverId, offeredAt])
+}
+
 enum BidStatus {
   PENDING
   ACCEPTED
   DECLINED
   CANCELED
+}
+
+enum AssignmentStatus {
+  UNASSIGNED
+  OFFERING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
+enum DriverAvailability {
+  OFFLINE
+  ONLINE
+  ON_TRIP
+  PAUSED
+}
+
+enum JobOfferStatus {
+  OFFERED
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CANCELED
+}
+
+enum VehicleType {
+  SEDAN
+  SUV
+  VAN
+  BOX_TRUCK
+  CAR_HAULER
+}
+
+enum EarningStatus {
+  PENDING
+  APPROVED
+  PAID
+}
+
+enum PayoutMethod {
+  WEEKLY_ACH
+  INSTANT_DEBIT
+}
+
+enum PayoutRail {
+  FEDNOW
+  RTP
+  INSTANT_DEBIT
+  ACH_SAME_DAY
+  ACH_STANDARD
+}
+
+enum PayoutStatus {
+  CREATED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+}
+
+enum LedgerRefType {
+  EARNING
+  PAYOUT
+}
+
+enum PayoutDestinationType {
+  BANK_ACH
+  DEBIT_CARD
 }

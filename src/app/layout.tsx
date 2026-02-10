@@ -2,7 +2,7 @@
 import "@/app/styles.css";
 import React from "react";
 import { cookies } from "next/headers";
-import NavAuth from "@/components/auth/NavAuth";
+import AppHeader from "@/components/layout/AppHeader";
 import { getSession, SESSION_COOKIE } from "@/lib/auth";
 
 export const metadata = {
@@ -20,26 +20,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body className="bg-white text-slate-900">
-        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur">
-          <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
-            <div className="flex items-center gap-2">
-              <div className="grid h-7 w-7 place-items-center rounded-lg bg-black text-white">S</div>
-              <span className="text-sm font-semibold">Sentka</span>
-            </div>
-            <nav className="hidden items-center gap-4 text-sm text-slate-700 md:flex">
-              <a href="/" className="hover:text-slate-900">Home</a>
-              <a href="/shipper/dashboard" className="hover:text-slate-900">Dashboard</a>
-              <a href="/pricing" className="hover:text-slate-900">Pricing</a>
-              <a href="/docs" className="hover:text-slate-900">Docs</a>
-              <a href="/about" className="hover:text-slate-900">About</a>
-              <a href="/contact" className="hover:text-slate-900">Contact</a>
-              <a href="/legal/privacy" className="hover:text-slate-900">Privacy</a>
-              <a href="/legal/terms" className="hover:text-slate-900">Terms</a>
-              <span className="mx-2 h-4 w-px bg-slate-200" aria-hidden="true" />
-              <NavAuth initialUser={initialUser} />
-            </nav>
-          </div>
-        </header>
+        <AppHeader initialUser={initialUser} />
         {children}
         <footer className="border-t border-slate-200">
           <div className="mx-auto max-w-7xl px-6 py-8 text-sm text-slate-500 flex flex-wrap gap-4 items-center justify-between">

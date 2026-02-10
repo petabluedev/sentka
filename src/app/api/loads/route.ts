@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { assignNearestDriver } from "@/lib/matching";
 import { currentUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -27,6 +28,10 @@ function normalizePayload(input: any) {
 
   const distance = input.distance != null ? Number(input.distance) : null;
   const pickupDate = input.date ? new Date(input.date) : null;
+  const pickupLat = input.pickupLat != null ? Number(input.pickupLat) : null;
+  const pickupLng = input.pickupLng != null ? Number(input.pickupLng) : null;
+  const dropoffLat = input.dropoffLat != null ? Number(input.dropoffLat) : null;
+  const dropoffLng = input.dropoffLng != null ? Number(input.dropoffLng) : null;
 
   return {
     pickupCity,
@@ -40,6 +45,10 @@ function normalizePayload(input: any) {
       ? (distance as number)
       : null,
     pickupDate,
+    pickupLat: Number.isFinite(pickupLat as number) ? (pickupLat as number) : null,
+    pickupLng: Number.isFinite(pickupLng as number) ? (pickupLng as number) : null,
+    dropoffLat: Number.isFinite(dropoffLat as number) ? (dropoffLat as number) : null,
+    dropoffLng: Number.isFinite(dropoffLng as number) ? (dropoffLng as number) : null,
   };
 }
 
@@ -93,6 +102,12 @@ export async function POST(req: NextRequest) {
         postedById: user?.id,
       },
     });
+
+    if (created.pickupLat != null && created.pickupLng != null) {
+      assignNearestDriver(created.id).catch((err) => {
+        console.error("Matching error for load", created.id, err);
+      });
+    }
 
     return NextResponse.json(created, { status: 201 });
   } catch (err) {

@@ -5,10 +5,18 @@ import { apiUrl } from "@/lib/api";
 import { vehicleOptions } from "@/data/vehicles";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe, StripeElementsOptions } from "@stripe/stripe-js";
+import { MapPin, Flag, Calendar, CarFront, Truck } from "lucide-react";
 
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
 const stripePromise = typeof window !== "undefined" && publishableKey ? loadStripe(publishableKey) : null;
 const corridorCities = ["Dallas", "Atlanta", "Houston", "San Antonio", "Austin"];
+const corridorCityCoords: Record<string, { lat: number; lng: number }> = {
+  Dallas: { lat: 32.7767, lng: -96.797 },
+  Atlanta: { lat: 33.749, lng: -84.388 },
+  Houston: { lat: 29.7604, lng: -95.3698 },
+  "San Antonio": { lat: 29.4241, lng: -98.4936 },
+  Austin: { lat: 30.2672, lng: -97.7431 },
+};
 const vehicleYears = Array.from({ length: 16 }, (_, idx) => `${2025 - idx}`); // 2025-2010
 const fieldClass = "border p-2 rounded h-11 w-full";
 
@@ -27,7 +35,6 @@ export default function PostLoadForm() {
   const [vehicleYear, setVehicleYear] = useState("");
   const [vehicleMakeModel, setVehicleMakeModel] = useState("");
   const [customVehicle, setCustomVehicle] = useState("");
-  const [vehicleSearchInput, setVehicleSearchInput] = useState("");
   const [vehicleType, setVehicleType] = useState("SEDAN");
   const [enclosed, setEnclosed] = useState(false);
   const [price, setPrice] = useState(""); // USD
@@ -39,11 +46,14 @@ export default function PostLoadForm() {
   const priceNumber = Number(price);
   const vehicleCombined = (customVehicle || [vehicleYear, vehicleMakeModel].filter(Boolean).join(" ")).trim();
   const showCustomVehicle = vehicleMakeModel === "OTHER";
-  const filteredVehicles = useMemo(() => {
-    const q = vehicleSearchInput.trim().toLowerCase();
-    if (!q) return vehicleOptions;
-    return vehicleOptions.filter((opt) => opt.toLowerCase().includes(q));
-  }, [vehicleSearchInput]);
+  const filteredVehicles = vehicleOptions;
+  const dropoffOptions = corridorCities.filter((city) => city !== pickupCity);
+
+  useEffect(() => {
+    if (pickupCity && dropoffCity === pickupCity) {
+      setDropoffCity("");
+    }
+  }, [pickupCity, dropoffCity]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -57,6 +67,10 @@ export default function PostLoadForm() {
       body: JSON.stringify({
         pickupCity,
         dropoffCity,
+        pickupLat: corridorCityCoords[pickupCity]?.lat ?? null,
+        pickupLng: corridorCityCoords[pickupCity]?.lng ?? null,
+        dropoffLat: corridorCityCoords[dropoffCity]?.lat ?? null,
+        dropoffLng: corridorCityCoords[dropoffCity]?.lng ?? null,
         vehicle: vehicleCombined,
         vehicleType,
         enclosed,
@@ -96,7 +110,6 @@ export default function PostLoadForm() {
     setVehicleYear("");
     setVehicleMakeModel("");
     setCustomVehicle("");
-    setVehicleSearchInput("");
     setPrice("");
     setEnclosed(false);
     setVehicleType("SEDAN");
@@ -107,87 +120,94 @@ export default function PostLoadForm() {
       <form onSubmit={submit} className="space-y-3 border rounded p-4 bg-white">
         <div className="font-semibold">Post & Pay for a Load</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <select className={fieldClass} value={pickupCity} onChange={(e) => setPickupCity(e.target.value)}>
-            <option value="">Pickup city</option>
-            {corridorCities.map((city) => (
-              <option key={`pickup-${city}`} value={city}>
-                {city}
-              </option>
-            ))}
-          </select>
-          <select className={fieldClass} value={dropoffCity} onChange={(e) => setDropoffCity(e.target.value)}>
-            <option value="">Dropoff city</option>
-            {corridorCities.map((city) => (
-              <option key={`dropoff-${city}`} value={city}>
-                {city}
-              </option>
-            ))}
-          </select>
-          <div className="space-y-2">
-            <input
-              className={fieldClass}
-              placeholder="Search make / model"
-              value={vehicleSearchInput}
-              onChange={(e) => setVehicleSearchInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  if (filteredVehicles[0]) setVehicleMakeModel(filteredVehicles[0]);
-                }
-              }}
-            />
-            {vehicleSearchInput ? (
-              <div className="flex flex-wrap gap-2 text-xs text-slate-600">
-                {filteredVehicles.slice(0, 8).map((suggestion) => (
-                  <button
-                    type="button"
-                    key={suggestion}
-                    onClick={() => {
-                      setVehicleMakeModel(suggestion);
-                      setVehicleSearchInput(suggestion);
-                      setCustomVehicle("");
-                    }}
-                    className="rounded-full border border-slate-200 px-3 py-1 hover:bg-slate-50"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-                {filteredVehicles.length === 0 ? <span>No matches</span> : null}
+          <div className="relative">
+            <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-600" />
+            <select
+              className={`${fieldClass} pl-9`}
+              value={pickupCity}
+              onChange={(e) => setPickupCity(e.target.value)}
+            >
+              <option value="">Pickup city</option>
+              {corridorCities.map((city) => (
+                <option key={`pickup-${city}`} value={city}>
+                  {city}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="relative">
+            <Flag className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sky-600" />
+            <select
+              className={`${fieldClass} pl-9`}
+              value={dropoffCity}
+              onChange={(e) => setDropoffCity(e.target.value)}
+            >
+              <option value="">Dropoff city</option>
+              {dropoffOptions.map((city) => (
+                <option key={`dropoff-${city}`} value={city}>
+                  {city}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-[140px_minmax(240px,1fr)_170px]">
+              <div className="relative">
+                <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-violet-600" />
+                <select
+                  className={`${fieldClass} pl-9`}
+                  value={vehicleYear}
+                  onChange={(e) => setVehicleYear(e.target.value)}
+                >
+                  <option value="">Year</option>
+                  {vehicleYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
               </div>
-            ) : null}
-            <div className="grid grid-cols-[120px_minmax(260px,1fr)_150px] gap-2">
-              <select
-                className={fieldClass}
-                value={vehicleYear}
-                onChange={(e) => setVehicleYear(e.target.value)}
-              >
-                <option value="">Year</option>
-                {vehicleYears.map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
-              <select
-                className={fieldClass}
-                value={vehicleMakeModel}
-                onChange={(e) => {
-                  setVehicleMakeModel(e.target.value);
-                  if (e.target.value !== "OTHER") setCustomVehicle("");
-                }}
-              >
-                <option value="">Make / Model</option>
-                {filteredVehicles.map((car) => (
-                  <option key={car} value={car}>
-                    {car}
-                  </option>
-                ))}
-                {filteredVehicles.length === 0 ? <option disabled>No matches</option> : null}
-                <option value="OTHER">Other (enter manually)</option>
-              </select>
+              <div className="relative">
+                <CarFront className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-600" />
+                <select
+                  className={`${fieldClass} pl-9`}
+                  value={vehicleMakeModel}
+                  onChange={(e) => {
+                    setVehicleMakeModel(e.target.value);
+                    if (e.target.value !== "OTHER") setCustomVehicle("");
+                  }}
+                >
+                  <option value="">Make / Model</option>
+                  {filteredVehicles.map((car) => (
+                    <option key={car} value={car}>
+                      {car}
+                    </option>
+                  ))}
+                  {filteredVehicles.length === 0 ? <option disabled>No matches</option> : null}
+                  <option value="OTHER">Other (enter manually)</option>
+                </select>
+              </div>
+              <div className="relative">
+                <Truck className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-600" />
+                <select className={`${fieldClass} pl-9`} value={vehicleType} onChange={(e) => setVehicleType(e.target.value)}>
+                  <option value="SEDAN">Sedan</option>
+                  <option value="SUV">SUV</option>
+                  <option value="TRUCK">Truck</option>
+                  <option value="MOTORCYCLE">Motorcycle</option>
+                  <option value="ENCLOSED">Enclosed</option>
+                </select>
+              </div>
+          </div>
+          <div className="md:col-span-2 flex items-center gap-3 rounded-xl border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-emerald-50 px-4 py-3 shadow-sm">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-emerald-700 text-base font-semibold shadow-sm ring-1 ring-emerald-100">
+              $
+            </span>
+            <div className="flex-1">
+              <label className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700/80">
+                Price (USD)
+              </label>
               <input
-                className={fieldClass}
-                placeholder="Price (USD)"
+                className="mt-0.5 w-full border-0 bg-transparent text-lg font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none"
+                placeholder="Enter amount"
                 type="number"
                 step="0.01"
                 value={price}
@@ -203,13 +223,6 @@ export default function PostLoadForm() {
               onChange={(e) => setCustomVehicle(e.target.value)}
             />
           ) : null}
-          <select className={fieldClass} value={vehicleType} onChange={(e) => setVehicleType(e.target.value)}>
-            <option value="SEDAN">Sedan</option>
-            <option value="SUV">SUV</option>
-            <option value="TRUCK">Truck</option>
-            <option value="MOTORCYCLE">Motorcycle</option>
-            <option value="ENCLOSED">Enclosed</option>
-          </select>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={enclosed} onChange={(e) => setEnclosed(e.target.checked)} />
             Enclosed
