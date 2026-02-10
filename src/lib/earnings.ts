@@ -5,9 +5,11 @@ export async function approveEarningForJob(opts: {
   jobId: string;
   driverId: string;
   amountCents: number;
+  platformFeeCents?: number;
 }) {
   return prisma.$transaction(async (tx) => {
     const amountCents = Math.round(opts.amountCents);
+    const platformFeeCents = Math.max(0, Math.round(opts.platformFeeCents ?? 0));
     const now = new Date();
     let earning = await tx.earning.findUnique({ where: { jobId: opts.jobId } });
 
@@ -59,6 +61,15 @@ export async function approveEarningForJob(opts: {
       creditAccount: LEDGER_ACCOUNTS.earningsPayable,
       amountCents: earning.amountCents,
     });
+    if (platformFeeCents > 0) {
+      await recordLedgerEntry(tx, {
+        refType: "EARNING",
+        refId: earning.id,
+        debitAccount: LEDGER_ACCOUNTS.freightExpense,
+        creditAccount: LEDGER_ACCOUNTS.sentkaRevenue,
+        amountCents: platformFeeCents,
+      });
+    }
 
     return earning;
   });

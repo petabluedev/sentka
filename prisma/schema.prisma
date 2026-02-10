@@ -33,6 +33,11 @@ model Load {
   ePODApprovedAt DateTime?
   ePODApprovedById String?
   ePODApprovedBy   User?    @relation("LoadEPODApproval", fields: [ePODApprovedById], references: [id])
+  ePODSignature String?
+  pickupHandoffAt DateTime?
+  pickupHandoffById String?
+  pickupHandoffBy   User?    @relation("LoadPickupHandoff", fields: [pickupHandoffById], references: [id])
+  pickupHandoffSignature String?
   payments    Payment[]
   bids        Bid[]
   earnings    Earning[]
@@ -56,6 +61,7 @@ model User {
   loads      Load[]
   assignedLoads Load[] @relation("AssignedDriver")
   ePODApprovals Load[]    @relation("LoadEPODApproval")
+  pickupHandoffs Load[]    @relation("LoadPickupHandoff")
   bids       Bid[]       @relation("DriverBids")
   earnings   Earning[]
   payouts    Payout[]

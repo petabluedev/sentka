@@ -20,6 +20,7 @@ type Load = {
   dropoffCity: string;
   pickupLat?: number | null;
   pickupLng?: number | null;
+  pickupHandoffAt?: string | null;
   priceCents: number;
   enclosed?: boolean;
   operable?: boolean;
@@ -114,13 +115,24 @@ export default async function DriverDashboardPage() {
     myLoadsRaw?.map((l) => {
       const acceptedBid = l.bids?.find((b) => b.status === "ACCEPTED");
       const completed = Boolean(l.ePODApprovedAt || l.payments?.some((p) => p.captured));
-      const status = completed ? ("DELIVERED" as const) : ("PICKED" as const);
+      const pickupSigned = Boolean(l.pickupHandoffAt);
+      const status = completed
+        ? ("DELIVERED" as const)
+        : pickupSigned
+        ? ("PICKED" as const)
+        : ("EN-ROUTE" as const);
+      const handoffNote = completed
+        ? "ePOD signed"
+        : pickupSigned
+        ? "Pickup handoff signed"
+        : "Awaiting pickup handoff";
       return {
         id: l.id,
         from: l.pickupCity,
         to: l.dropoffCity,
         eta: "Today",
         status,
+        handoffNote,
         price: Math.round((l.priceCents ?? 0) / 100),
         bids: l.bids?.map((b) => ({
           ...b,

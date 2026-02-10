@@ -14,6 +14,7 @@ type Load = {
   eta: string;
   status: "EN-ROUTE" | "PICKED" | "DELIVERED";
   price: number;
+  handoffNote?: string;
   bids?: { id: string; amountCents: number; status: string }[];
   createdAt?: string | null;
   completedAt?: string | null;
@@ -384,7 +385,10 @@ function LoadRow(l: Load) {
     <div className="flex items-center justify-between py-3">
       <div className="min-w-0">
         <div className="font-medium truncate">{l.from} → {l.to}</div>
-        <div className="text-xs text-gray-500">ID {l.id} · ETA {l.eta}</div>
+        <div className="text-xs text-gray-500">
+          ID {l.id} · ETA {l.eta}
+          {l.handoffNote ? ` · ${l.handoffNote}` : ""}
+        </div>
       </div>
       <div className="flex items-center gap-3">
         <StatusPill status={l.status} />

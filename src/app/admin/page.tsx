@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import AdminClientMarker from "@/components/admin/AdminClientMarker";
 import { getSession, SESSION_COOKIE } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { LEDGER_ACCOUNTS } from "@/lib/ledger";
 
 export const metadata = { title: "Admin • Sentka" };
 
@@ -14,7 +15,7 @@ export default async function AdminPage() {
     redirect("/auth/signin");
   }
 
-  const [users, loads, payments] = await Promise.all([
+  const [users, loads, payments, ledgerEntries, sentkaCredit, sentkaDebit] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: "desc" },
       take: 20,
@@ -46,12 +47,25 @@ export default async function AdminPage() {
         createdAt: true,
       },
     }),
+    prisma.ledgerEntry.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+    prisma.ledgerEntry.aggregate({
+      where: { creditAccount: LEDGER_ACCOUNTS.sentkaRevenue },
+      _sum: { amountCents: true },
+    }),
+    prisma.ledgerEntry.aggregate({
+      where: { debitAccount: LEDGER_ACCOUNTS.sentkaRevenue },
+      _sum: { amountCents: true },
+    }),
   ]);
 
   const roleCounts = users.reduce(
     (acc, u) => ({ ...acc, [u.role]: (acc as any)[u.role] + 1 || 1 }),
     { ADMIN: 0, SHIPPER: 0, DRIVER: 0 } as Record<string, number>
   );
+  const sentkaRevenueCents = (sentkaCredit._sum.amountCents ?? 0) - (sentkaDebit._sum.amountCents ?? 0);
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10 space-y-8">
@@ -62,12 +76,13 @@ export default async function AdminPage() {
         </div>
         <h1 className="text-3xl font-bold tracking-tight">Admin Console</h1>
         <p className="text-sm text-slate-600">Overview of users, loads, and payments.</p>
-        <div className="flex gap-3 text-sm text-slate-700">
+        <div className="flex flex-wrap gap-3 text-sm text-slate-700">
           <Badge label="Admins" value={roleCounts.ADMIN || 0} color="emerald" />
           <Badge label="Shippers" value={roleCounts.SHIPPER || 0} color="sky" />
           <Badge label="Drivers" value={roleCounts.DRIVER || 0} color="amber" />
           <Badge label="Loads" value={loads.length} color="slate" />
           <Badge label="Payments" value={payments.length} color="violet" />
+          <Badge label="Sentka revenue" value={Math.round(sentkaRevenueCents / 100)} color="emerald" />
         </div>
       </header>
 
@@ -141,6 +156,37 @@ export default async function AdminPage() {
           </table>
         </Card>
       </section>
+
+      <section>
+        <Card title="Ledger entries">
+          {ledgerEntries.length === 0 ? (
+            <div className="text-sm text-slate-500">No ledger entries yet.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr>
+                  <th className="py-2">Ref</th>
+                  <th className="py-2">Debit</th>
+                  <th className="py-2">Credit</th>
+                  <th className="py-2">Amount</th>
+                  <th className="py-2">Created</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {ledgerEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td className="py-2 text-xs text-slate-700">{entry.refType}:{entry.refId.slice(0, 8)}…</td>
+                    <td className="py-2 text-xs text-slate-700">{entry.debitAccount}</td>
+                    <td className="py-2 text-xs text-slate-700">{entry.creditAccount}</td>
+                    <td className="py-2 text-sm font-semibold text-slate-900">{formatMoney(entry.amountCents)}</td>
+                    <td className="py-2 text-xs text-slate-500">{formatDate(entry.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      </section>
     </main>
   );
 }
@@ -183,4 +229,8 @@ function formatDate(input?: Date | string | null) {
   if (!input) return "—";
   const d = typeof input === "string" ? new Date(input) : input;
   return d.toLocaleDateString();
+}
+
+function formatMoney(cents: number) {
+  return `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }

@@ -22,6 +22,9 @@ type Load = {
   distance?: number | null;
   createdAt?: string;
   ePODApprovedAt?: string | null;
+  ePODSignature?: string | null;
+  pickupHandoffAt?: string | null;
+  pickupHandoffSignature?: string | null;
   payments?: {
     id: string;
     status: string;
@@ -205,6 +208,7 @@ function LoadRow({ load, index }: { load: Load; index: number }) {
       : index % 2 === 0
       ? "bg-amber-50 text-amber-700 border-amber-200"
       : "bg-sky-50 text-sky-700 border-sky-200";
+  const acceptedBid = load.bids?.find((b) => b.status === "ACCEPTED");
 
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -242,6 +246,10 @@ function LoadRow({ load, index }: { load: Load; index: number }) {
             paymentId={load.payments?.[0]?.id}
             captured={load.payments?.[0]?.captured}
             epodApproved={Boolean(load.ePODApprovedAt)}
+            epodSignature={load.ePODSignature ?? null}
+            pickupHandoffAt={load.pickupHandoffAt ?? null}
+            pickupHandoffSignature={load.pickupHandoffSignature ?? null}
+            hasAcceptedBid={Boolean(acceptedBid)}
           />
         </div>
       </div>
