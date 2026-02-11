@@ -442,6 +442,7 @@ function BidRow({ bid }: { bid: NearbyBid }) {
 
 function AcceptButton({ bid }: { bid: NearbyBid }) {
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const router = useRouter();
 
   async function accept() {
     if (status === "loading") return;
@@ -450,10 +451,14 @@ function AcceptButton({ bid }: { bid: NearbyBid }) {
       const res = await fetch("/api/bids", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ loadId: bid.id, amountCents: Math.round(bid.pay * 100) }),
+        body: JSON.stringify({ loadId: bid.id, amountCents: Math.round(bid.pay * 100), instantAccept: true }),
       });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({} as any));
+        throw new Error(data?.error || "Failed");
+      }
       setStatus("done");
+      router.refresh();
     } catch (err) {
       console.error(err);
       setStatus("error");
@@ -462,7 +467,7 @@ function AcceptButton({ bid }: { bid: NearbyBid }) {
   }
 
   const label =
-    status === "loading" ? "Accepting..." : status === "done" ? "Accepted" : status === "error" ? "Retry" : "Accept";
+    status === "loading" ? "Booking..." : status === "done" ? "Booked" : status === "error" ? "Retry" : "Book";
 
   return (
     <button

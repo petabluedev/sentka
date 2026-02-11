@@ -12,14 +12,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!bid) return NextResponse.json({ error: "Bid not found" }, { status: 404 });
 
     // Accept this bid, decline others on the same load.
+    const now = new Date();
     await prisma.$transaction([
       prisma.bid.update({
         where: { id: bidId },
-        data: { status: "ACCEPTED", acceptedAt: new Date() },
+        data: { status: "ACCEPTED", acceptedAt: now },
       }),
       prisma.bid.updateMany({
         where: { loadId: bid.loadId, id: { not: bidId }, status: "PENDING" },
         data: { status: "DECLINED" },
+      }),
+      prisma.load.update({
+        where: { id: bid.loadId },
+        data: { assignmentStatus: "ASSIGNED", assignedDriverId: bid.driverId },
+      }),
+      prisma.driverStatus.updateMany({
+        where: { driverId: bid.driverId },
+        data: { availability: "ON_TRIP" },
       }),
     ]);
 

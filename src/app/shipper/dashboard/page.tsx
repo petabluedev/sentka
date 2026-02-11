@@ -1,16 +1,16 @@
 // src/app/(shipper)/dashboard/page.tsx
 import { headers, cookies } from "next/headers";
-import dynamic from "next/dynamic";
+import dynamicImport from "next/dynamic";
 import LiveRibbon from "@/components/pricing/LiveRibbon";
 import LiveBidsPanel from "@/components/pricing/LiveBidsPanel";
 import PostLoadForm from "@/components/forms/PostLoadForm";
 import { apiUrl } from "@/lib/api";
 import AuthStatus from "@/components/auth/AuthStatus";
 import { getSession, SESSION_COOKIE } from "@/lib/auth";
-import LoadActions from "@/components/loads/LoadActions";
 import prisma from "@/lib/prisma";
+import RecentLoads from "@/components/shipper/RecentLoads";
 
-const ShipperDriversMap = dynamic(() => import("@/components/maps/ShipperDriversMap"), { ssr: false });
+const ShipperDriversMap = dynamicImport(() => import("@/components/maps/ShipperDriversMap"), { ssr: false });
 
 export const dynamic = "force-dynamic";
 
@@ -167,15 +167,7 @@ export default async function DashboardPage() {
           </Card>
 
           <Card title="Recent loads">
-            {loads.length === 0 ? (
-              <EmptyState />
-            ) : (
-              <div className="space-y-2">
-                {loads.map((load, idx) => (
-                  <LoadRow key={load.id ?? idx} load={load} index={idx} />
-                ))}
-              </div>
-            )}
+            <RecentLoads initialLoads={loads} />
           </Card>
         </div>
 
@@ -245,80 +237,6 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
         <h3 className="text-sm font-semibold">{title}</h3>
       </div>
       <div className="p-4">{children}</div>
-    </div>
-  );
-}
-
-function LoadRow({ load, index }: { load: Load; index: number }) {
-  // Show a more realistic default stage; avoid "Draft" when a load is posted.
-  const stages = ["Posted", "Pending bids", "Dispatched", "Delivered"];
-  const stage = stages[Math.min(index, stages.length - 1)];
-  const tone =
-    stage === "Posted"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : index % 2 === 0
-      ? "bg-amber-50 text-amber-700 border-amber-200"
-      : "bg-sky-50 text-sky-700 border-sky-200";
-  const acceptedBid = load.bids?.find((b) => b.status === "ACCEPTED");
-
-  return (
-    <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <div className="text-sm font-semibold truncate">
-          {load.pickupCity} → {load.dropoffCity}
-        </div>
-        <div className="text-xs text-slate-500">
-          {load.vehicleType ?? "Vehicle"} {load.vehicle ? `• ${load.vehicle}` : ""}{" "}
-          {load.enclosed ? "• Enclosed" : ""} {load.operable === false ? "• Inoperable" : ""}
-          {typeof load.distance === "number" ? ` • ${load.distance} mi` : ""}
-        </div>
-        {load.bids && load.bids.length ? (
-          <div className="mt-1 text-[11px] text-slate-500">
-            {load.bids.filter((b) => b.status === "PENDING").length} pending bids ·{" "}
-            {load.bids.filter((b) => b.status === "ACCEPTED").length ? "accepted" : "awaiting decision"}
-          </div>
-        ) : null}
-        {load.bids?.find((b) => b.status === "PENDING") ? (
-          <button
-            className="mt-2 rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-            onClick={async () => {
-              const bid = load.bids?.find((b) => b.status === "PENDING");
-              if (!bid) return;
-              await fetch(`/api/bids/${bid.id}/accept`, { method: "POST", credentials: "include" });
-              location.reload();
-            }}
-          >
-            Accept top bid
-          </button>
-        ) : null}
-        <div className="mt-2">
-          <LoadActions
-            loadId={load.id}
-            paymentId={load.payments?.[0]?.id}
-            captured={load.payments?.[0]?.captured}
-            epodApproved={Boolean(load.ePODApprovedAt)}
-            epodSignature={load.ePODSignature ?? null}
-            pickupHandoffAt={load.pickupHandoffAt ?? null}
-            pickupHandoffSignature={load.pickupHandoffSignature ?? null}
-            hasAcceptedBid={Boolean(acceptedBid)}
-          />
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className={`text-[11px] border px-2 py-0.5 rounded-full ${tone}`}>{stage}</span>
-        <div className="text-right">
-          <div className="text-base font-bold">{formatMoney(load.priceCents)}</div>
-          <div className="text-[11px] text-slate-500">all-in</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-      No loads yet. Post your first pickup/dropoff to see live pricing and bids.
     </div>
   );
 }
