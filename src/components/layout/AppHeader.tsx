@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import NavAuth from "@/components/auth/NavAuth";
 
@@ -43,15 +43,12 @@ export default function AppHeader({ initialUser = null }: Props) {
     };
   }, [initialUser]);
 
+  const role = user?.role?.toUpperCase();
+  const dashboardHref =
+    role === "DRIVER" ? "/driver/dashboard" : role === "ADMIN" ? "/admin" : "/shipper/dashboard";
+
   if (!mounted) return null;
   if (pathname?.startsWith("/auth")) return null;
-
-  const dashboardHref = useMemo(() => {
-    const role = user?.role?.toUpperCase();
-    if (role === "DRIVER") return "/driver/dashboard";
-    if (role === "ADMIN") return "/admin";
-    return "/shipper/dashboard";
-  }, [user?.role]);
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur">

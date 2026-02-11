@@ -162,6 +162,8 @@ export default async function DriverDashboardPage() {
           miles,
           pay: Math.round((l.priceCents ?? 0) / 100),
           instant: true,
+          pickupLat: l.pickupLat,
+          pickupLng: l.pickupLng,
         };
       })
       .sort((a, b) => a.miles - b.miles) ?? [];
@@ -224,6 +226,7 @@ export default async function DriverDashboardPage() {
           new Date(a.completedAt ?? a.createdAt ?? "").getTime()
       ),
     nearbyBids: availableLoads,
+    driverLocation: driverLocation ? { lat: driverLocation.lat, lng: driverLocation.lng } : null,
     earnings: {
       summary: earningsSummary,
       items: earnings,

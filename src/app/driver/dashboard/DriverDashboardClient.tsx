@@ -4,6 +4,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MapPin, Truck, Star, DollarSign } from "lucide-react";
+import DriverLoadsMap from "@/components/maps/DriverLoadsMap";
 
 // ---------- Types ----------
 type KPI = { activeLoads: number; milesToday: number; weekEarnings: number; onTimePct: number; rating: number };
@@ -20,7 +21,15 @@ type Load = {
   completedAt?: string | null;
   bidAmount?: number | null;
 };
-type NearbyBid = { id: string; lane: string; body: string; miles: number; pay: number };
+type NearbyBid = {
+  id: string;
+  lane: string;
+  body: string;
+  miles: number;
+  pay: number;
+  pickupLat?: number | null;
+  pickupLng?: number | null;
+};
 type EarningItem = {
   id: string;
   jobId: string;
@@ -46,6 +55,7 @@ export type Initial = {
   loadsToday: Load[];
   completedLoads: Load[];
   nearbyBids: NearbyBid[];
+  driverLocation?: { lat: number; lng: number } | null;
   earnings: { summary: EarningsSummary; items: EarningItem[]; instantFeeCents: number };
 };
 
@@ -54,6 +64,7 @@ export default function DriverDashboardClient({ initial }: { initial: Initial })
   const loadsToday = initial.loadsToday ?? [];
   const completedLoads = initial.completedLoads ?? [];
   const nearby = initial.nearbyBids ?? [];
+  const driverLocation = initial.driverLocation ?? null;
   const bids = nearby;
   const earnings = initial.earnings?.items ?? [];
   const earningsSummary = initial.earnings?.summary ?? { pendingCents: 0, approvedCents: 0, paidCents: 0 };
@@ -261,6 +272,10 @@ export default function DriverDashboardClient({ initial }: { initial: Initial })
                 ))
               )}
             </div>
+          </Card>
+
+          <Card title="Load map">
+            <DriverLoadsMap loads={nearby} driverLocation={driverLocation} />
           </Card>
 
           <Card title="Nearby bids">

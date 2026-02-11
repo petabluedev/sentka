@@ -1,5 +1,6 @@
 // src/app/(shipper)/dashboard/page.tsx
 import { headers, cookies } from "next/headers";
+import dynamic from "next/dynamic";
 import LiveRibbon from "@/components/pricing/LiveRibbon";
 import LiveBidsPanel from "@/components/pricing/LiveBidsPanel";
 import PostLoadForm from "@/components/forms/PostLoadForm";
@@ -7,6 +8,9 @@ import { apiUrl } from "@/lib/api";
 import AuthStatus from "@/components/auth/AuthStatus";
 import { getSession, SESSION_COOKIE } from "@/lib/auth";
 import LoadActions from "@/components/loads/LoadActions";
+import prisma from "@/lib/prisma";
+
+const ShipperDriversMap = dynamic(() => import("@/components/maps/ShipperDriversMap"), { ssr: false });
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +41,15 @@ type Load = {
   bids?: { id: string; amountCents: number; status: string; driverId: string }[];
 };
 
+type DriverMarker = {
+  id: string;
+  name: string;
+  status: "ONLINE" | "ON_TRIP" | "PAUSED";
+  lat: number;
+  lng: number;
+  lastSeenAt?: string | null;
+};
+
 function getBaseUrl() {
   const h = headers();
   const host = h.get("x-forwarded-host") ?? h.get("host")!;
@@ -48,6 +61,35 @@ async function getLoads(): Promise<Load[]> {
   const res = await fetch(apiUrl("/api/loads", { origin: getBaseUrl() }), { cache: "no-store" });
   if (!res.ok) return [];
   return res.json();
+}
+
+function obfuscateCoord(coord: number) {
+  return Math.round(coord * 100) / 100;
+}
+
+async function getDriverMarkers(): Promise<DriverMarker[]> {
+  const drivers = await prisma.user.findMany({
+    where: {
+      role: "DRIVER",
+      driverStatus: { availability: { in: ["ONLINE", "ON_TRIP", "PAUSED"] } },
+    },
+    include: {
+      driverLocation: true,
+      driverStatus: true,
+    },
+    take: 200,
+  });
+
+  return drivers
+    .filter((d) => d.driverLocation)
+    .map((d) => ({
+      id: d.id,
+      name: d.name || d.username || d.email,
+      status: (d.driverStatus?.availability as DriverMarker["status"]) ?? "PAUSED",
+      lat: obfuscateCoord(d.driverLocation!.lat),
+      lng: obfuscateCoord(d.driverLocation!.lng),
+      lastSeenAt: d.driverStatus?.lastSeenAt?.toISOString() ?? null,
+    }));
 }
 
 function formatMoney(cents: number) {
@@ -80,7 +122,7 @@ export default async function DashboardPage() {
   const initialUser = session?.user
     ? { email: session.user.email, username: (session.user as any).username ?? "", role: session.user.role }
     : null;
-  const loads = await getLoads();
+  const [loads, driverMarkers] = await Promise.all([getLoads(), getDriverMarkers()]);
 
   const totalValue = loads.reduce((sum, l) => sum + (l.priceCents ?? 0), 0);
   const enclosedCount = loads.filter((l) => l.enclosed).length;
@@ -140,6 +182,15 @@ export default async function DashboardPage() {
         <div className="space-y-4">
           <Card title="Live nearby bids">
             <LiveBidsPanel />
+          </Card>
+          <Card title="Available drivers (approx)">
+            {driverMarkers.length ? (
+              <ShipperDriversMap drivers={driverMarkers} />
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                No online drivers yet.
+              </div>
+            )}
           </Card>
           <Card title="Workflow">
             <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 via-orange-50 to-white p-4">
