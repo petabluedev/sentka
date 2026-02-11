@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import NavAuth from "@/components/auth/NavAuth";
 
@@ -15,13 +15,43 @@ type Props = { initialUser?: User | null };
 export default function AppHeader({ initialUser = null }: Props) {
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+  const [user, setUser] = useState<User | null>(initialUser);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  useEffect(() => {
+    if (initialUser) {
+      setUser(initialUser);
+      return;
+    }
+    let active = true;
+    fetch("/api/auth/me", { cache: "no-store", credentials: "include" })
+      .then(async (r) => {
+        if (!active) return;
+        if (r.ok) {
+          const data = await r.json().catch(() => ({} as any));
+          if (active) setUser(data?.user ?? null);
+        } else if (r.status === 401) {
+          setUser(null);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [initialUser]);
+
   if (!mounted) return null;
   if (pathname?.startsWith("/auth")) return null;
+
+  const dashboardHref = useMemo(() => {
+    const role = user?.role?.toUpperCase();
+    if (role === "DRIVER") return "/driver/dashboard";
+    if (role === "ADMIN") return "/admin";
+    return "/shipper/dashboard";
+  }, [user?.role]);
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur">
@@ -32,7 +62,7 @@ export default function AppHeader({ initialUser = null }: Props) {
         </div>
         <nav className="hidden items-center gap-4 text-sm text-slate-700 md:flex">
           <a href="/" className="hover:text-slate-900">Home</a>
-          <a href="/shipper/dashboard" className="hover:text-slate-900">Dashboard</a>
+          <a href={dashboardHref} className="hover:text-slate-900">Dashboard</a>
           <a href="/pricing" className="hover:text-slate-900">Pricing</a>
           <a href="/docs" className="hover:text-slate-900">Docs</a>
           <span className="mx-2 h-4 w-px bg-slate-200" aria-hidden="true" />
