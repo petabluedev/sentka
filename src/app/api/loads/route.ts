@@ -92,6 +92,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (user?.id) {
+      const recent = await prisma.load.findFirst({
+        where: {
+          postedById: user.id,
+          pickupCity: data.pickupCity!,
+          dropoffCity: data.dropoffCity!,
+          priceCents: data.priceCents!,
+          vehicleType: data.vehicleType,
+          vehicle: data.vehicle,
+          enclosed: data.enclosed,
+          operable: data.operable,
+          createdAt: { gte: new Date(Date.now() - 30_000) },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      if (recent) {
+        return NextResponse.json(recent, { status: 200 });
+      }
+    }
+
     // At this point we KNOW pickupCity, dropoffCity, priceCents exist
     const created = await prisma.load.create({
       data: {

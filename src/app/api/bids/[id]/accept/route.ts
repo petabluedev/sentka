@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { currentUser } from "@/lib/auth";
+import { LEDGER_ACCOUNTS, recordLedgerEntry } from "@/lib/ledger";
+import { getDriverAcceptFeeCents } from "@/lib/fees";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -13,24 +15,35 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     // Accept this bid, decline others on the same load.
     const now = new Date();
-    await prisma.$transaction([
-      prisma.bid.update({
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.bid.update({
         where: { id: bidId },
         data: { status: "ACCEPTED", acceptedAt: now },
-      }),
-      prisma.bid.updateMany({
+      });
+      await tx.bid.updateMany({
         where: { loadId: bid.loadId, id: { not: bidId }, status: "PENDING" },
         data: { status: "DECLINED" },
-      }),
-      prisma.load.update({
+      });
+      await tx.load.update({
         where: { id: bid.loadId },
         data: { assignmentStatus: "ASSIGNED", assignedDriverId: bid.driverId },
-      }),
-      prisma.driverStatus.updateMany({
+      });
+      await tx.driverStatus.updateMany({
         where: { driverId: bid.driverId },
         data: { availability: "ON_TRIP" },
-      }),
-    ]);
+      });
+
+      const driverFeeCents = Math.max(0, getDriverAcceptFeeCents());
+      if (driverFeeCents > 0) {
+        await recordLedgerEntry(tx, {
+          refType: "PAYOUT",
+          refId: updated.id,
+          debitAccount: LEDGER_ACCOUNTS.driverFeeWithheld,
+          creditAccount: LEDGER_ACCOUNTS.sentkaRevenue,
+          amountCents: driverFeeCents,
+        });
+      }
+    });
 
     // Optionally set payeeId on the payment if exists.
     await prisma.payment.updateMany({

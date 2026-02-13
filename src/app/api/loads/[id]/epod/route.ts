@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { currentUser } from "@/lib/auth";
 import { approveEarningForJob } from "@/lib/earnings";
 import { requireStripe } from "@/lib/stripe";
+import { getDriverAcceptFeeCents } from "@/lib/fees";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -40,11 +41,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       });
     }
 
+    const driverFeeCents = Math.max(0, getDriverAcceptFeeCents());
+    const driverNetCents = Math.max(0, acceptedBid.amountCents - driverFeeCents);
     const platformFeeCents = Math.max(0, (load.priceCents ?? 0) - acceptedBid.amountCents);
     await approveEarningForJob({
       jobId: load.id,
       driverId: acceptedBid.driverId,
-      amountCents: acceptedBid.amountCents,
+      amountCents: driverNetCents,
       platformFeeCents,
     });
 

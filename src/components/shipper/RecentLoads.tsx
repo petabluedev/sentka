@@ -88,6 +88,8 @@ function LoadRow({ load, index }: { load: Load; index: number }) {
   const acceptedBid = load.bids?.find((b) => b.status === "ACCEPTED");
   const hasAcceptedBid = Boolean(acceptedBid);
   const hasPendingBid = Boolean(load.bids?.some((b) => b.status === "PENDING"));
+  const escrowed = Boolean(load.payments?.some((p) => !p.captured));
+  const captured = Boolean(load.payments?.some((p) => p.captured));
   const stage = load.ePODApprovedAt
     ? "Delivered"
     : load.assignmentStatus === "ASSIGNED" || hasAcceptedBid
@@ -116,6 +118,12 @@ function LoadRow({ load, index }: { load: Load; index: number }) {
           {load.operable === false ? "• Inoperable" : ""}
           {typeof load.distance === "number" ? ` • ${load.distance} mi` : ""}
         </div>
+        {escrowed && !captured ? (
+          <div className="mt-1 text-[11px] font-semibold text-emerald-700">Escrow funded</div>
+        ) : null}
+        {captured ? (
+          <div className="mt-1 text-[11px] font-semibold text-emerald-700">Paid out</div>
+        ) : null}
         {load.bids && load.bids.length ? (
           <div className="mt-1 text-[11px] text-slate-500">
             {load.bids.filter((b) => b.status === "PENDING").length} pending bids ·{" "}

@@ -5,6 +5,7 @@ import AdminClientMarker from "@/components/admin/AdminClientMarker";
 import { getSession, SESSION_COOKIE } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { LEDGER_ACCOUNTS } from "@/lib/ledger";
+import { getDriverAcceptFeeCents, getShipperFeeCents } from "@/lib/fees";
 
 export const metadata = { title: "Admin • Sentka" };
 
@@ -15,7 +16,7 @@ export default async function AdminPage() {
     redirect("/auth/signin");
   }
 
-  const [users, loads, payments, ledgerEntries, sentkaCredit, sentkaDebit] = await Promise.all([
+  const [users, loads, payments, ledgerEntriesRaw, sentkaCredit, sentkaDebit, earnings, loadFinancials] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: "desc" },
       take: 20,
@@ -48,6 +49,12 @@ export default async function AdminPage() {
       },
     }),
     prisma.ledgerEntry.findMany({
+      where: {
+        OR: [
+          { creditAccount: LEDGER_ACCOUNTS.sentkaRevenue },
+          { debitAccount: LEDGER_ACCOUNTS.sentkaRevenue },
+        ],
+      },
       orderBy: { createdAt: "desc" },
       take: 20,
     }),
@@ -59,6 +66,24 @@ export default async function AdminPage() {
       where: { debitAccount: LEDGER_ACCOUNTS.sentkaRevenue },
       _sum: { amountCents: true },
     }),
+    prisma.earning.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      include: {
+        driver: { select: { id: true, email: true, username: true } },
+        job: { select: { pickupCity: true, dropoffCity: true } },
+      },
+    }),
+    prisma.load.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      include: {
+        payments: { orderBy: { createdAt: "desc" }, take: 1 },
+        earnings: { orderBy: { createdAt: "desc" }, take: 1 },
+        bids: { where: { status: "ACCEPTED" }, orderBy: { acceptedAt: "desc" }, take: 1 },
+        postedBy: { select: { email: true, username: true } },
+      },
+    }),
   ]);
 
   const roleCounts = users.reduce(
@@ -66,6 +91,7 @@ export default async function AdminPage() {
     { ADMIN: 0, SHIPPER: 0, DRIVER: 0 } as Record<string, number>
   );
   const sentkaRevenueCents = (sentkaCredit._sum.amountCents ?? 0) - (sentkaDebit._sum.amountCents ?? 0);
+  const ledgerEntries = ledgerEntriesRaw;
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10 space-y-8">
@@ -131,7 +157,7 @@ export default async function AdminPage() {
       </section>
 
       <section>
-        <Card title="Recent payments">
+        <Card title="Shipper payments (escrow)">
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
               <tr>
@@ -143,22 +169,104 @@ export default async function AdminPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {payments.map((p) => (
-                <tr key={p.id}>
-                  <td className="py-2 text-xs text-slate-700">{p.id.slice(0, 10)}…</td>
-                  <td className="py-2 text-xs text-slate-700">{p.loadId}</td>
-                  <td className="py-2 text-sm font-semibold text-slate-900">${(p.amountCents / 100).toFixed(0)}</td>
-                  <td className="py-2 text-[11px] uppercase text-slate-700">{p.status}</td>
-                  <td className="py-2 text-xs text-slate-500">{formatDate(p.createdAt)}</td>
-                </tr>
-              ))}
+                {payments.map((p) => (
+                  <tr key={p.id}>
+                    <td className="py-2 text-xs text-slate-700">{p.id.slice(0, 10)}…</td>
+                    <td className="py-2 text-xs text-slate-700">{p.loadId}</td>
+                    <td className="py-2 text-sm font-semibold text-slate-900">${(p.amountCents / 100).toFixed(0)}</td>
+                    <td className="py-2 text-[11px] uppercase text-slate-700">{p.status}</td>
+                    <td className="py-2 text-xs text-slate-500">{formatDate(p.createdAt)}</td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </Card>
       </section>
 
       <section>
-        <Card title="Ledger entries">
+        <Card title="Driver credits (earnings)">
+          {earnings.length === 0 ? (
+            <div className="text-sm text-slate-500">No driver earnings yet.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr>
+                  <th className="py-2">Driver</th>
+                  <th className="py-2">Lane</th>
+                  <th className="py-2">Amount</th>
+                  <th className="py-2">Status</th>
+                  <th className="py-2">Updated</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {earnings.map((e) => (
+                  <tr key={e.id}>
+                    <td className="py-2 text-xs text-slate-700">{e.driver.username || e.driver.email}</td>
+                    <td className="py-2 text-xs text-slate-700">
+                      {e.job.pickupCity} → {e.job.dropoffCity}
+                    </td>
+                    <td className="py-2 text-sm font-semibold text-slate-900">{formatMoney(e.amountCents)}</td>
+                    <td className="py-2 text-[11px] uppercase text-slate-700">{e.status}</td>
+                    <td className="py-2 text-xs text-slate-500">{formatDate(e.updatedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      </section>
+
+      <section>
+        <Card title="Delivery ledger (shipper paid → driver credited → Sentka)">
+          {loadFinancials.length === 0 ? (
+            <div className="text-sm text-slate-500">No deliveries yet.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr>
+                  <th className="py-2">Load</th>
+                  <th className="py-2">Shipper paid</th>
+                  <th className="py-2">Driver credited</th>
+                  <th className="py-2">Sentka</th>
+                  <th className="py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {loadFinancials.map((l) => {
+                  const payment = l.payments?.[0];
+                  const earning = l.earnings?.[0];
+                  const shipperPaid = payment?.amountCents ?? 0;
+                  const driverCredit = earning?.amountCents ?? l.bids?.[0]?.amountCents ?? 0;
+                  const shipperFee = getShipperFeeCents();
+                  const driverFee = getDriverAcceptFeeCents();
+                  const sentka = Math.max(0, shipperPaid - driverCredit);
+                  const status = payment?.captured ? "captured" : payment ? "escrow" : "unpaid";
+                  return (
+                    <tr key={l.id}>
+                      <td className="py-2 text-xs text-slate-700">
+                        {l.pickupCity} → {l.dropoffCity}
+                      </td>
+                      <td className="py-2 text-sm font-semibold text-slate-900">
+                        {formatMoney(shipperPaid)}{" "}
+                        <span className="text-[11px] text-slate-500">(fee {formatMoney(shipperFee)})</span>
+                      </td>
+                      <td className="py-2 text-sm font-semibold text-slate-900">{formatMoney(driverCredit)}</td>
+                      <td className="py-2 text-sm font-semibold text-emerald-700">
+                        {formatMoney(sentka)}{" "}
+                        <span className="text-[11px] text-slate-500">(driver fee {formatMoney(driverFee)})</span>
+                      </td>
+                      <td className="py-2 text-[11px] uppercase text-slate-700">{status}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      </section>
+
+      <section>
+        <Card title="Sentka ledger entries">
           {ledgerEntries.length === 0 ? (
             <div className="text-sm text-slate-500">No ledger entries yet.</div>
           ) : (

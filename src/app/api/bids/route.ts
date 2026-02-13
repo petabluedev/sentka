@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { currentUser } from "@/lib/auth";
+import { LEDGER_ACCOUNTS, recordLedgerEntry } from "@/lib/ledger";
+import { getDriverAcceptFeeCents } from "@/lib/fees";
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,6 +23,7 @@ export async function POST(req: NextRequest) {
     if (instantAccept) {
       const now = new Date();
       const bid = await prisma.$transaction(async (tx) => {
+        const driverFeeCents = Math.max(0, getDriverAcceptFeeCents());
         const existing = await tx.bid.findFirst({
           where: { loadId, driverId: user.id, status: "ACCEPTED" },
         });
@@ -56,6 +59,16 @@ export async function POST(req: NextRequest) {
           where: { driverId: user.id },
           data: { availability: "ON_TRIP" },
         });
+
+        if (driverFeeCents > 0) {
+          await recordLedgerEntry(tx, {
+            refType: "PAYOUT",
+            refId: created.id,
+            debitAccount: LEDGER_ACCOUNTS.driverFeeWithheld,
+            creditAccount: LEDGER_ACCOUNTS.sentkaRevenue,
+            amountCents: driverFeeCents,
+          });
+        }
 
         return created;
       });

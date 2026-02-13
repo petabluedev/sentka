@@ -6,6 +6,7 @@ import { vehicleOptions } from "@/data/vehicles";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe, StripeElementsOptions } from "@stripe/stripe-js";
 import { MapPin, Flag, Calendar, CarFront, Truck } from "lucide-react";
+import { getShipperFeeCents } from "@/lib/fees";
 
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
 const stripePromise = typeof window !== "undefined" && publishableKey ? loadStripe(publishableKey) : null;
@@ -42,6 +43,7 @@ export default function PostLoadForm() {
   const [createdLoad, setCreatedLoad] = useState<CreatedLoad | null>(null);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const priceNumber = Number(price);
   const vehicleCombined = (customVehicle || [vehicleYear, vehicleMakeModel].filter(Boolean).join(" ")).trim();
@@ -57,10 +59,12 @@ export default function PostLoadForm() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting || paying) return;
     if (!pickupCity || !dropoffCity || !priceNumber) {
       alert("Pickup, Dropoff, and Price are required.");
       return;
     }
+    setSubmitting(true);
     const res = await fetch(apiUrl("/api/loads"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -80,6 +84,7 @@ export default function PostLoadForm() {
     if (!res.ok) {
       const j = await res.json().catch(() => ({} as any));
       alert(j.error || "Failed to post");
+      setSubmitting(false);
       return;
     }
     const load = (await res.json()) as CreatedLoad;
@@ -98,10 +103,12 @@ export default function PostLoadForm() {
       const j = await intent.json().catch(() => ({} as any));
       alert(j.error || "Could not start payment");
       setPaying(false);
+      setSubmitting(false);
       return;
     }
     const data = await intent.json();
     setClientSecret(data.clientSecret);
+    setSubmitting(false);
   }
 
   function resetForm() {
@@ -238,7 +245,12 @@ export default function PostLoadForm() {
           >
             Clear
           </button>
-          <button className="bg-black text-white px-4 py-2 rounded">Post & Pay</button>
+          <button
+            className="bg-black text-white px-4 py-2 rounded disabled:opacity-60"
+            disabled={submitting || paying}
+          >
+            {submitting ? "Posting..." : paying ? "Waiting for payment..." : "Post & Pay"}
+          </button>
         </div>
       </form>
 
@@ -276,6 +288,8 @@ function PaymentModal({
   onClose: () => void;
   summary: { from: string; to: string; amount: number; vehicleType: string; enclosed?: boolean };
 }) {
+  const shipperFee = getShipperFeeCents() / 100;
+  const total = summary.amount + shipperFee;
   const options: StripeElementsOptions = useMemo(
     () => ({
       clientSecret,
@@ -302,7 +316,11 @@ function PaymentModal({
             ✕
           </button>
         </div>
-        <div className="text-sm font-semibold mb-3">Amount: ${summary.amount.toFixed(2)}</div>
+        <div className="text-sm font-semibold mb-3">
+          Amount: ${summary.amount.toFixed(2)}
+          {shipperFee > 0 ? <span className="text-slate-500 font-normal"> + ${shipperFee.toFixed(2)} fee</span> : null}
+        </div>
+        {shipperFee > 0 ? <div className="text-xs text-slate-500 mb-3">Total: ${total.toFixed(2)}</div> : null}
         <Elements stripe={stripePromise} options={options}>
           <PaymentForm onClose={onClose} />
         </Elements>

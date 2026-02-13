@@ -6,6 +6,5 @@ export type PricingSignal = {
   trend: "up" | "down" | "flat";
   watchers: number;
   bids: number;
-  instantBookEligible: boolean;
   confidence: number; // 0–1
 };

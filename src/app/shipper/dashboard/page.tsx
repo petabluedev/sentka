@@ -1,14 +1,14 @@
 // src/app/(shipper)/dashboard/page.tsx
 import { headers, cookies } from "next/headers";
 import dynamicImport from "next/dynamic";
-import LiveRibbon from "@/components/pricing/LiveRibbon";
-import LiveBidsPanel from "@/components/pricing/LiveBidsPanel";
+import PendingBidsPanel from "@/components/shipper/PendingBidsPanel";
 import PostLoadForm from "@/components/forms/PostLoadForm";
 import { apiUrl } from "@/lib/api";
 import AuthStatus from "@/components/auth/AuthStatus";
 import { getSession, SESSION_COOKIE } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import RecentLoads from "@/components/shipper/RecentLoads";
+import RoutePricingSignals from "@/components/pricing/RoutePricingSignals";
 
 const ShipperDriversMap = dynamicImport(() => import("@/components/maps/ShipperDriversMap"), { ssr: false });
 
@@ -97,24 +97,6 @@ function formatMoney(cents: number) {
   return `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 0 })}`;
 }
 
-const workflowSteps = [
-  {
-    title: "Post your load",
-    description: "Pick the corridor route, set price, and lock in details in under a minute.",
-  },
-  {
-    title: "Signal price confidence",
-    description: "Our pricing engine nudges fair-market rates every ~90s to drive fast matches.",
-  },
-  {
-    title: "Carriers engage live",
-    description: "Carriers instant-book or counter inside your live feed—no back-and-forth emails.",
-  },
-  {
-    title: "Track, deliver, payout",
-    description: "Mark POD, trigger payout, and keep visibility on every milestone.",
-  },
-];
 
 export default async function DashboardPage() {
   const token = cookies().get(SESSION_COOKIE)?.value;
@@ -124,9 +106,13 @@ export default async function DashboardPage() {
     : null;
   const [loads, driverMarkers] = await Promise.all([getLoads(), getDriverMarkers()]);
 
-  const totalValue = loads.reduce((sum, l) => sum + (l.priceCents ?? 0), 0);
-  const enclosedCount = loads.filter((l) => l.enclosed).length;
-  const inoperable = loads.filter((l) => l.operable === false).length;
+  const activeLoads = loads.filter(
+    (l) => !l.ePODApprovedAt && !l.payments?.some((p) => p.captured)
+  );
+  const totalValue = activeLoads.reduce((sum, l) => sum + (l.priceCents ?? 0), 0);
+  const enclosedCount = activeLoads.filter((l) => l.enclosed).length;
+  const inoperable = activeLoads.filter((l) => l.operable === false).length;
+  const pricingSignals = buildPricingSignals(activeLoads);
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-10 space-y-10" suppressHydrationWarning>
@@ -142,7 +128,7 @@ export default async function DashboardPage() {
             Everything here stays in sync between SSR/CSR to avoid hydration mismatches.
           </p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Active loads" value={loads.length} />
+            <StatCard label="Active loads" value={activeLoads.length} />
             <StatCard label="Value posted" value={formatMoney(totalValue)} hint="all-in" />
             <StatCard label="Enclosed requests" value={enclosedCount} />
             <StatCard label="Inoperable" value={inoperable} />
@@ -150,12 +136,9 @@ export default async function DashboardPage() {
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-emerald-50 to-sky-50 p-4 shadow-sm">
-          <div className="text-xs font-semibold text-emerald-700">Pricing signal</div>
-          <div className="mt-2 text-sm text-slate-700">
-            Dallas → Atlanta · SUV · operable
-          </div>
+          <div className="text-xs font-semibold text-emerald-700">Intelligent pricing (all routes)</div>
           <div className="mt-3">
-            <LiveRibbon />
+            <RoutePricingSignals routes={pricingSignals} />
           </div>
         </div>
       </section>
@@ -164,16 +147,6 @@ export default async function DashboardPage() {
         <div className="space-y-4">
           <Card title="Create a load">
             <PostLoadForm />
-          </Card>
-
-          <Card title="Recent loads">
-            <RecentLoads initialLoads={loads} />
-          </Card>
-        </div>
-
-        <div className="space-y-4">
-          <Card title="Live nearby bids">
-            <LiveBidsPanel />
           </Card>
           <Card title="Available drivers (approx)">
             {driverMarkers.length ? (
@@ -184,35 +157,14 @@ export default async function DashboardPage() {
               </div>
             )}
           </Card>
-          <Card title="Workflow">
-            <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 via-orange-50 to-white p-4">
-              <div className="flex items-center justify-between text-[11px] font-semibold text-amber-700">
-                <span className="uppercase tracking-wide">Fast lane</span>
-                <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] text-amber-700 shadow-sm">~4 min</span>
-              </div>
-              <ol className="mt-3 space-y-3">
-                {workflowSteps.map((step, idx) => (
-                  <li key={step.title} className="flex items-start gap-3">
-                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white shadow-sm">
-                      {idx + 1}
-                    </div>
-                    <div className="w-full rounded-xl border border-white/70 bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
-                      <div className="text-sm font-semibold text-slate-900">{step.title}</div>
-                      <p className="text-xs leading-snug text-slate-600">{step.description}</p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-              <div className="mt-4 flex items-center justify-between rounded-xl border border-slate-900/10 bg-slate-900 px-4 py-3 text-white shadow-sm">
-                <div>
-                  <div className="text-[10px] uppercase tracking-wide text-emerald-200">Tip</div>
-                  <div className="text-sm font-semibold leading-snug">Peak acceptances hit 9a-3p along the corridor.</div>
-                </div>
-                <span className="rounded-full bg-white/10 px-3 py-1 text-[10px] font-semibold text-emerald-100 shadow-inner">
-                  Live guidance
-                </span>
-              </div>
-            </div>
+        </div>
+
+        <div className="space-y-4">
+          <Card title="Pending bids">
+            <PendingBidsPanel initialLoads={loads} />
+          </Card>
+          <Card title="Recent loads">
+            <RecentLoads initialLoads={loads} />
           </Card>
         </div>
       </section>
@@ -239,4 +191,42 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
       <div className="p-4">{children}</div>
     </div>
   );
+}
+
+type PricingSignal = {
+  id: string;
+  lane: string;
+  ask: number;
+  fair: number;
+  watchers: number;
+  confidence: number;
+};
+
+function buildPricingSignals(loads: Load[]): PricingSignal[] {
+  const laneMap = new Map<string, Load>();
+  const sorted = [...loads].sort((a, b) => {
+    const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bt - at;
+  });
+  for (const load of sorted) {
+    const key = `${load.pickupCity}|${load.dropoffCity}`;
+    if (!laneMap.has(key)) laneMap.set(key, load);
+  }
+
+  return Array.from(laneMap.values()).map((load) => {
+    const ask = Math.max(1, Math.round((load.priceCents ?? 0) / 100));
+    const fair = Math.max(1, Math.round(ask * 0.94));
+    const bids = load.bids?.length ?? 0;
+    const watchers = Math.min(40, Math.max(6, bids * 3 + 6));
+    const confidence = Math.min(0.92, 0.6 + bids * 0.05);
+    return {
+      id: load.id,
+      lane: `${load.pickupCity} → ${load.dropoffCity}`,
+      ask,
+      fair,
+      watchers,
+      confidence,
+    };
+  });
 }

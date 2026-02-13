@@ -33,7 +33,7 @@ export default function LiveBidCard({
     <div className="flex items-center justify-between rounded-lg border px-3 py-2">
       <div>
         <div className="text-sm font-medium">{title}</div>
-        <div className="text-xs text-gray-500">instant book eligible</div>
+        <div className="text-xs text-gray-500">Live price signal</div>
       </div>
 
       <div className="text-right" /* optional: suppressHydrationWarning */>

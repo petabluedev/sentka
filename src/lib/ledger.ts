@@ -7,6 +7,8 @@ export const LEDGER_ACCOUNTS = {
   feeRevenue: "fee_revenue",
   freightExpense: "freight_expense",
   sentkaRevenue: "sentka_revenue",
+  escrowCash: "escrow_cash",
+  driverFeeWithheld: "driver_fee_withheld",
 } as const;
 
 type LedgerEntryInput = {

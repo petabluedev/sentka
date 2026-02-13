@@ -35,7 +35,6 @@ export default function useLivePricing(initialAsk = 720): PricingSignal {
     trend,
     watchers,
     bids,
-    instantBookEligible: ask <= fair * 1.05,
     confidence: 0.78
   };
 }

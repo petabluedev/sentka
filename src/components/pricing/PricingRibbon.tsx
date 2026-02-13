@@ -8,7 +8,6 @@ export type PricingRibbonProps = {
   trend: "up" | "down" | "flat";
   confidence: number; // 0–1
   watchers: number;
-  instantBookEligible?: boolean;
 };
 
 export default function PricingRibbon({
@@ -18,7 +17,6 @@ export default function PricingRibbon({
   trend,
   confidence,
   watchers,
-  instantBookEligible,
 }: PricingRibbonProps) {
   const color =
     trend === "up" ? "bg-emerald-600" : trend === "down" ? "bg-rose-600" : "bg-slate-600";
@@ -41,11 +39,6 @@ export default function PricingRibbon({
           <b className="tabular-nums">{watchers}</b>
           <span className="ml-3">confidence</span>
           <b className="tabular-nums">{Math.round(confidence * 100)}%</b>
-          {instantBookEligible && (
-            <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-              instant-book eligible
-            </span>
-          )}
         </span>
       </div>
     </div>

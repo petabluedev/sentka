@@ -132,9 +132,7 @@ export default function DriverDashboardClient({ initial }: { initial: Initial })
         {/* Intelligent pricing ribbon */}
         <div className="rounded-xl border bg-gradient-to-r from-emerald-50 to-sky-50 px-4 py-3">
           <div className="text-xs font-medium text-emerald-700">INTELLIGENT PRICING</div>
-          <div className="text-sm text-gray-700">
-            Live bids adjust to lane demand. <span className="font-medium">Instant-book eligible</span> loads highlighted in green.
-          </div>
+          <div className="text-sm text-gray-700">Live bids adjust to lane demand across active routes.</div>
         </div>
       </div>
 
