@@ -8,6 +8,7 @@ type Props = {
   captured?: boolean | null;
   epodApproved?: boolean;
   epodSignature?: string | null;
+  epodRequestedAt?: string | null;
   pickupHandoffAt?: string | null;
   pickupHandoffSignature?: string | null;
   hasAcceptedBid?: boolean;
@@ -19,6 +20,7 @@ export default function LoadActions({
   captured,
   epodApproved,
   epodSignature,
+  epodRequestedAt,
   pickupHandoffAt,
   pickupHandoffSignature,
   hasAcceptedBid,
@@ -88,7 +90,7 @@ export default function LoadActions({
           Pickup signed{pickupHandoffSignature ? ` • ${pickupHandoffSignature}` : ""}
         </span>
       ) : null}
-      {hasAcceptedBid && !epodSigned ? (
+      {epodRequestedAt && !epodSigned ? (
         <button
           onClick={() => {
             setSignature("");
@@ -99,6 +101,9 @@ export default function LoadActions({
         >
           Sign ePOD
         </button>
+      ) : null}
+      {epodRequestedAt && !epodSigned ? (
+        <span className="text-amber-700 font-semibold">Awaiting shipper signature</span>
       ) : null}
       {epodSigned ? (
         <span className="text-emerald-700 font-semibold">

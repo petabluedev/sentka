@@ -16,6 +16,7 @@ type Load = {
   status: "EN-ROUTE" | "PICKED" | "DELIVERED";
   price: number;
   handoffNote?: string;
+  ePODRequestedAt?: string | null;
   bids?: { id: string; amountCents: number; status: string }[];
   createdAt?: string | null;
   completedAt?: string | null;
@@ -363,6 +364,8 @@ function StatusPill({ status }: { status: Load["status"] }) {
 function LoadRow(l: Load) {
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [bidStatus, setBidStatus] = useState<string>(l.bids?.find((b) => b.status === "PENDING" || b.status === "ACCEPTED")?.status || "NONE");
+  const [deliverStatus, setDeliverStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const router = useRouter();
 
   async function placeBid() {
     if (status === "loading" || bidStatus === "ACCEPTED") return;
@@ -383,6 +386,21 @@ function LoadRow(l: Load) {
     }
   }
 
+  async function markDelivered() {
+    if (deliverStatus === "loading" || deliverStatus === "done") return;
+    setDeliverStatus("loading");
+    try {
+      const res = await fetch(`/api/loads/${l.id}/delivered`, { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      setDeliverStatus("done");
+      router.refresh();
+    } catch (err) {
+      console.error(err);
+      setDeliverStatus("error");
+      setTimeout(() => setDeliverStatus("idle"), 1500);
+    }
+  }
+
   const label =
     bidStatus === "ACCEPTED"
       ? "Bid accepted"
@@ -393,6 +411,17 @@ function LoadRow(l: Load) {
       : status === "error"
       ? "Retry bid"
       : "Bid";
+
+  const deliveredRequested = Boolean(l.ePODRequestedAt) || deliverStatus === "done";
+  const canMarkDelivered = bidStatus === "ACCEPTED" && !deliveredRequested && l.status !== "DELIVERED";
+  const deliverLabel =
+    deliverStatus === "loading"
+      ? "Sending..."
+      : deliverStatus === "done"
+      ? "Waiting for ePOD"
+      : deliverStatus === "error"
+      ? "Retry"
+      : "Mark delivered";
 
   return (
     <div className="flex items-center justify-between py-3">
@@ -409,6 +438,20 @@ function LoadRow(l: Load) {
           <div className="text-sm font-semibold">${l.bidAmount ?? l.price}</div>
           <div className="text-xs text-gray-500">all-in</div>
         </div>
+        {canMarkDelivered ? (
+          <button
+            onClick={markDelivered}
+            disabled={deliverStatus === "loading" || deliverStatus === "done"}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {deliverLabel}
+          </button>
+        ) : null}
+        {deliveredRequested && l.status !== "DELIVERED" ? (
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
+            Waiting for ePOD signature
+          </span>
+        ) : null}
         <button
           onClick={placeBid}
           disabled={status === "loading" || bidStatus === "ACCEPTED"}

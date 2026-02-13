@@ -22,7 +22,7 @@ type Props = {
 
 export default function RoutePricingSignals({ routes }: Props) {
   const initial = useMemo(() => {
-    const base = routes.length ? routes : defaultRoutes();
+    const base = mergeRoutes(defaultRoutes(), routes);
     return base.map(toSignal);
   }, [routes]);
   const [signals, setSignals] = useState<Signal[]>(initial);
@@ -50,7 +50,7 @@ export default function RoutePricingSignals({ routes }: Props) {
 
   return (
     <div className="relative">
-      <div className="max-h-64 space-y-3 overflow-y-auto pr-2">
+      <div className="max-h-72 space-y-2 overflow-y-auto pr-2">
         {signals.map((signal) => (
           <PricingSignalRow key={signal.id} signal={signal} />
         ))}
@@ -68,17 +68,14 @@ function PricingSignalRow({ signal }: { signal: Signal }) {
       ? "bg-rose-600"
       : "bg-slate-600";
   return (
-    <div className="rounded-xl border border-slate-200 bg-white/80 px-3 py-3">
+    <div className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0">
-          <div className="text-xs font-semibold text-slate-700">Intelligent pricing</div>
           <div className="text-sm font-semibold text-slate-900 truncate">{signal.lane}</div>
+          <div className="text-[11px] text-slate-500">fair ${signal.fair}</div>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-3 text-xs text-slate-600">
-          <span className="text-lg font-semibold text-slate-900">${signal.ask}</span>
-          <span>
-            fair: <b className="tabular-nums">${signal.fair}</b>
-          </span>
+          <span className="text-base font-semibold text-slate-900">${signal.ask}</span>
           <span className={`rounded-full px-2 py-0.5 text-[10px] text-white ${color}`}>
             {signal.trend === "up" ? "↑" : signal.trend === "down" ? "↓" : "→"} ${deltaAbs}
           </span>
@@ -111,18 +108,47 @@ function clampFloat(value: number, min: number, max: number) {
 }
 
 function defaultRoutes(): RoutePricingSignal[] {
-  return [
-    { id: "route_dal_atl", lane: "Dallas → Atlanta", ask: 780, fair: 742, watchers: 14, confidence: 0.76 },
-    { id: "route_atl_dal", lane: "Atlanta → Dallas", ask: 765, fair: 728, watchers: 12, confidence: 0.74 },
-    { id: "route_sat_atl", lane: "San Antonio → Atlanta", ask: 940, fair: 886, watchers: 9, confidence: 0.68 },
-    { id: "route_atl_sat", lane: "Atlanta → San Antonio", ask: 910, fair: 864, watchers: 8, confidence: 0.66 },
-    { id: "route_hou_dal", lane: "Houston → Dallas", ask: 620, fair: 598, watchers: 11, confidence: 0.72 },
-    { id: "route_dal_hou", lane: "Dallas → Houston", ask: 635, fair: 604, watchers: 10, confidence: 0.71 },
-    { id: "route_sat_hou", lane: "San Antonio → Houston", ask: 540, fair: 518, watchers: 9, confidence: 0.7 },
-    { id: "route_hou_sat", lane: "Houston → San Antonio", ask: 552, fair: 520, watchers: 8, confidence: 0.69 },
-    { id: "route_atl_hou", lane: "Atlanta → Houston", ask: 880, fair: 835, watchers: 13, confidence: 0.75 },
-    { id: "route_hou_atl", lane: "Houston → Atlanta", ask: 895, fair: 848, watchers: 12, confidence: 0.73 },
-    { id: "route_atl_sat", lane: "Atlanta → San Antonio", ask: 915, fair: 862, watchers: 7, confidence: 0.64 },
-    { id: "route_dal_sat", lane: "Dallas → San Antonio", ask: 515, fair: 492, watchers: 6, confidence: 0.62 },
-  ];
+  const cities = ["Dallas", "Atlanta", "Houston", "San Antonio", "Austin"];
+  const routes: RoutePricingSignal[] = [];
+  for (const from of cities) {
+    for (const to of cities) {
+      if (from === to) continue;
+      const seed = Math.abs(hash(`${from}-${to}`)) % 400;
+      const ask = 520 + seed;
+      const fair = Math.round(ask * 0.94);
+      const watchers = 6 + (seed % 10);
+      const confidence = 0.6 + (seed % 20) / 100;
+      routes.push({
+        id: `route_${slug(from)}_${slug(to)}`,
+        lane: `${from} → ${to}`,
+        ask,
+        fair,
+        watchers,
+        confidence: Math.min(0.92, confidence),
+      });
+    }
+  }
+  return routes;
+}
+
+function mergeRoutes(base: RoutePricingSignal[], overrides: RoutePricingSignal[]) {
+  if (!overrides.length) return base;
+  const map = new Map(base.map((r) => [r.lane, r]));
+  for (const route of overrides) {
+    map.set(route.lane, { ...map.get(route.lane), ...route, id: route.id || map.get(route.lane)?.id || route.lane });
+  }
+  return Array.from(map.values());
+}
+
+function slug(value: string) {
+  return value.toLowerCase().replace(/\s+/g, "-");
+}
+
+function hash(value: string) {
+  let h = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    h = (h << 5) - h + value.charCodeAt(i);
+    h |= 0;
+  }
+  return h;
 }

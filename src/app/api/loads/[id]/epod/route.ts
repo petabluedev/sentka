@@ -27,6 +27,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!acceptedBid) {
       return NextResponse.json({ error: "No accepted bid found for this load" }, { status: 400 });
     }
+    if (!load.ePODRequestedAt) {
+      return NextResponse.json({ error: "Delivery not marked by driver yet" }, { status: 400 });
+    }
 
     const alreadyApproved = Boolean(load.ePODApprovedAt);
     const signature = signatureInput || load.ePODSignature || user.name || user.email || "Shipper";

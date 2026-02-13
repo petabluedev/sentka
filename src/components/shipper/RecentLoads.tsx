@@ -17,6 +17,7 @@ type Load = {
   createdAt?: string;
   ePODApprovedAt?: string | null;
   ePODSignature?: string | null;
+  ePODRequestedAt?: string | null;
   pickupHandoffAt?: string | null;
   pickupHandoffSignature?: string | null;
   payments?: {
@@ -92,6 +93,8 @@ function LoadRow({ load, index }: { load: Load; index: number }) {
   const captured = Boolean(load.payments?.some((p) => p.captured));
   const stage = load.ePODApprovedAt
     ? "Delivered"
+    : load.ePODRequestedAt
+    ? "Awaiting ePOD"
     : load.assignmentStatus === "ASSIGNED" || hasAcceptedBid
     ? "Accepted by driver"
     : hasPendingBid
@@ -100,6 +103,8 @@ function LoadRow({ load, index }: { load: Load; index: number }) {
   const tone =
     stage === "Delivered"
       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : stage === "Awaiting ePOD"
+      ? "bg-amber-50 text-amber-700 border-amber-200"
       : stage === "Accepted by driver"
       ? "bg-sky-50 text-sky-700 border-sky-200"
       : stage === "Posted"
@@ -150,6 +155,7 @@ function LoadRow({ load, index }: { load: Load; index: number }) {
             captured={load.payments?.[0]?.captured}
             epodApproved={Boolean(load.ePODApprovedAt)}
             epodSignature={load.ePODSignature ?? null}
+            epodRequestedAt={load.ePODRequestedAt ?? null}
             pickupHandoffAt={load.pickupHandoffAt ?? null}
             pickupHandoffSignature={load.pickupHandoffSignature ?? null}
             hasAcceptedBid={Boolean(acceptedBid)}

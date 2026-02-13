@@ -28,6 +28,7 @@ type Load = {
   distance?: number | null;
   createdAt?: string;
   ePODApprovedAt?: string | null;
+  ePODRequestedAt?: string | null;
   payments?: { captured: boolean; releasedAt?: string | null }[];
   bids?: { id: string; driverId: string; status: string; amountCents: number; createdAt: string }[];
 };
@@ -115,14 +116,19 @@ export default async function DriverDashboardPage() {
     myLoadsRaw?.map((l) => {
       const acceptedBid = l.bids?.find((b) => b.status === "ACCEPTED");
       const completed = Boolean(l.ePODApprovedAt || l.payments?.some((p) => p.captured));
+      const deliveredRequested = Boolean(l.ePODRequestedAt);
       const pickupSigned = Boolean(l.pickupHandoffAt);
       const status = completed
+        ? ("DELIVERED" as const)
+        : deliveredRequested
         ? ("DELIVERED" as const)
         : pickupSigned
         ? ("PICKED" as const)
         : ("EN-ROUTE" as const);
       const handoffNote = completed
         ? "ePOD signed"
+        : deliveredRequested
+        ? "Awaiting shipper ePOD"
         : pickupSigned
         ? "Pickup handoff signed"
         : "Awaiting pickup handoff";
@@ -133,6 +139,7 @@ export default async function DriverDashboardPage() {
         eta: "Today",
         status,
         handoffNote,
+        ePODRequestedAt: l.ePODRequestedAt?.toISOString() ?? null,
         price: Math.round((l.priceCents ?? 0) / 100),
         bids: l.bids?.map((b) => ({
           ...b,
